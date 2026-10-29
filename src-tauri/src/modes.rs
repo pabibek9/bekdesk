@@ -598,7 +598,8 @@ pub async fn tick(app: &Arc<App>) {
     // Origin sessions whose peer vanished (sleep, reboot, network change) are dropped and restored below.
     let gone: Vec<String> = {
         let peers = app.peers.lock().unwrap();
-        app.sessions.lock().unwrap().iter().filter(|(fp, s)| s.origin && !peers.contains_key(*fp)).map(|(fp, _)| fp.clone()).collect()
+        let stale = app.stale.lock().unwrap();
+        app.sessions.lock().unwrap().iter().filter(|(fp, s)| s.origin && (!peers.contains_key(*fp) || stale.contains(*fp))).map(|(fp, _)| fp.clone()).collect()
     };
     for fp in gone {
         if let Some(s) = app.sessions.lock().unwrap().remove(&fp) {
@@ -616,7 +617,7 @@ pub async fn tick(app: &Arc<App>) {
     let wanted: Vec<(String, Mode)> = app.cfg.lock().unwrap().modes.iter().filter(|(_, m)| **m != Mode::Off).map(|(f, m)| (f.clone(), *m)).collect();
     for (fp, mode) in wanted {
         let idle = !app.sessions.lock().unwrap().contains_key(&fp);
-        if !idle || app.peer(&fp).is_none() || !app.knows(&fp) {
+        if !idle || app.peer(&fp).is_none() || app.stale.lock().unwrap().contains(&fp) || !app.knows(&fp) {
             continue;
         }
         {
@@ -638,9 +639,34 @@ pub async fn tick(app: &Arc<App>) {
     ensure_tablet_host(app).await;
 }
 
+/// Mark advertised devices that no longer accept connections as stale so they disappear from the list.
+async fn probe_peers(app: &Arc<App>) {
+    let peers: Vec<(String, Vec<IpAddr>, u16)> = app.peers.lock().unwrap().values().map(|p| (p.fp.clone(), p.addrs.clone(), p.port)).collect();
+    for (fp, addrs, port) in peers {
+        let mut alive = false;
+        for ip in addrs.iter().take(3) {
+            if matches!(tokio::time::timeout(Duration::from_secs(2), tokio::net::TcpStream::connect((*ip, port))).await, Ok(Ok(_))) {
+                alive = true;
+                break;
+            }
+        }
+        let mut stale = app.stale.lock().unwrap();
+        if alive {
+            stale.remove(&fp);
+        } else {
+            stale.insert(fp);
+        }
+    }
+}
+
 pub async fn supervise(app: Arc<App>) {
+    let mut n = 0u32;
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
+        if n % 8 == 0 {
+            probe_peers(&app).await;
+        }
+        n = n.wrapping_add(1);
         tick(&app).await;
         if std::env::var_os("BEKDESK_DUMP").is_some() {
             let _ = std::fs::write(app.dir.join("status.json"), app.snapshot().to_string());

@@ -44,6 +44,7 @@ pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
                         fullname: info.get_fullname().to_string(),
                         fp: fp.clone(),
                     };
+                    app.stale.lock().unwrap().remove(&fp);
                     let new = app.peers.lock().unwrap().insert(fp, peer.clone()).is_none();
                     if new {
                         app.log(format!("found {} ({}) at {:?}", peer.name, peer.os, peer.addrs));

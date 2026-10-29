@@ -58,11 +58,7 @@ function status(d) {
 
 function renderDevices() {
   const me = S.me;
-  const rows = [`
-    <div class="dev self"><div class="top">
-      <div class="ico">${ICON[me.os] || ICON.windows}</div>
-      <div class="t"><div class="n">${esc(me.name)}</div><div class="s">This device · ${osName(me.os)}</div></div>
-      <span class="badge">This Device</span></div></div>`];
+  const rows = [];
   const devs = [...S.devices].sort((a, b) => (b.online - a.online) || String(a.name).localeCompare(String(b.name)));
   for (const d of devs) {
     const live = !!d.session;
@@ -89,15 +85,24 @@ function renderDevices() {
         </div>
       </div>`);
   }
-  if (!S.devices.length) rows.push(`<div class="empty">Looking for other computers running bekdesk on this network… Make sure they are on the same Wi-Fi or LAN and that the firewall allows bekdesk.</div>`);
+  if (!S.devices.length) rows.push(`<div class="card start">
+      <div class="n" style="font-weight:600">No other computers found yet</div>
+      <ol>
+        <li>On your other PC or Mac, install bekdesk (same installer) and open it.</li>
+        <li>Make sure both are on the same Wi-Fi or network. If Windows asks, allow bekdesk on <b>private</b> networks.</li>
+        <li>It appears here within a few seconds. Click it and choose <b>Share Input</b>, <b>Extend</b> or <b>Mirror</b>.</li>
+      </ol>
+      <div class="small">This computer is <b>${esc(me.name)}</b>. Searching…</div></div>`);
   $("#device-list").innerHTML = rows.join("");
 
   const t = S.tablet;
   const winHost = me.os === "windows";
   $("#tablet").innerHTML = `
     <div class="row2"><div class="ico">${ICON.tablet}</div>
-      <div class="grow"><div class="n" style="font-weight:600">Tablets &amp; phones (Moonlight)</div>
-      <div class="small">Install <b>Moonlight</b> on an Android tablet, then let it show this computer. It finds this computer by itself; enter the PIN it shows below.</div></div></div>
+      <div class="grow"><div class="n" style="font-weight:600">Android tablet</div>
+      <div class="small">There is no bekdesk app for Android yet, so the tablet uses the free <b>Moonlight</b> app as its screen.
+      1) Choose Mirror or Extend here. 2) Install Moonlight from the Play Store on the tablet and open it — this computer shows up there.
+      3) Tap it; type the 4-digit PIN it shows into the box below and press Pair. 4) Tap <b>Desktop</b>.</div></div></div>
     <div class="row">
       <select id="tab-mode">
         <option value="off" ${t === "off" ? "selected" : ""}>Off</option>

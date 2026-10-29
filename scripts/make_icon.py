@@ -11,16 +11,23 @@ def inside_round(x, y, x0, y0, x1, y1, r):
     cy = min(max(y, y0 + r), y1 - r)
     return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
 
+def bg(x, y):
+    # diagonal blue gradient
+    t = (x + y) / (2 * N)
+    return (int(64 - 34 * t), int(118 - 58 * t), int(255 - 35 * t), 255)
+
 def pixel(x, y):
     if not inside_round(x, y, 64, 64, 960, 960, 200):
         return (0, 0, 0, 0)
-    px = (17, 17, 19, 255)
+    px = bg(x, y)
     # back screen (gray outline) and front screen (white), slightly offset
-    for (x0, y0, x1, y1, col) in [(300, 250, 820, 600, (120, 120, 128, 255)), (204, 380, 724, 730, (245, 245, 247, 255))]:
-        if inside_round(x, y, x0, y0, x1, y1, 36):
-            px = col if not inside_round(x, y, x0 + 28, y0 + 28, x1 - 28, y1 - 28, 14) else (17, 17, 19, 255)
-    if inside_round(x, y, 404, 760, 524, 790, 15):
-        px = (245, 245, 247, 255)
+    # back screen (translucent white), front screen (solid white with blue panel)
+    if inside_round(x, y, 330, 230, 840, 590, 44):
+        px = (190, 210, 255, 255) if not inside_round(x, y, 378, 278, 792, 542, 16) else bg(x, y)
+    if inside_round(x, y, 184, 370, 714, 740, 48):
+        px = (255, 255, 255, 255) if not inside_round(x, y, 234, 420, 664, 690, 18) else (226, 235, 255, 255)
+    if inside_round(x, y, 374, 776, 524, 818, 21):
+        px = (255, 255, 255, 255)
     return px
 
 rows = bytearray()

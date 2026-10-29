@@ -146,6 +146,8 @@ pub struct App {
     pub waiters: Mutex<HashMap<u64, oneshot::Sender<Decision>>>,
     pub transfers: Mutex<Vec<Transfer>>,
     pub notes: Mutex<HashMap<String, String>>,
+    /// Advertised peers that stopped answering (e.g. crashed without an mDNS goodbye).
+    pub stale: Mutex<HashSet<String>>,
     pub log: Mutex<VecDeque<String>>,
     pub clip_last: Mutex<u64>,
     pub attempts: Mutex<HashMap<String, Instant>>,
@@ -186,6 +188,7 @@ impl App {
             waiters: Default::default(),
             transfers: Default::default(),
             notes: Default::default(),
+            stale: Default::default(),
             log: Default::default(),
             clip_last: Default::default(),
             attempts: Default::default(),
@@ -319,6 +322,7 @@ impl App {
         let peers = self.peers.lock().unwrap().clone();
         let notes = self.notes.lock().unwrap().clone();
         let once = self.once.lock().unwrap().clone();
+        let stale = self.stale.lock().unwrap().clone();
         let sessions: HashMap<String, Value> = self
             .sessions
             .lock()
@@ -330,6 +334,7 @@ impl App {
             })
             .collect();
         // Offline trusted devices stay listed so their saved mode is visible.
+        let peers: HashMap<String, Peer> = peers.into_iter().filter(|(fp, _)| !stale.contains(fp)).collect();
         let mut ids: Vec<String> = peers.keys().cloned().collect();
         for fp in cfg.trusted.keys() {
             if !ids.contains(fp) {

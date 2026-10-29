@@ -10,29 +10,29 @@
   <aside class="nav">
     <div class="brand"><span class="logo"></span>bekdesk</div>
     <button data-view="devices" class="on">Nearby Devices</button>
-    <button data-view="workspace">Workspace</button>
-    <button data-view="activity">Activity</button>
+    <button data-view="workspace">Manage Screens</button>
+    <button data-view="activity">Connections</button>
     <button data-view="settings">Settings</button>
     <div class="me" id="me"></div>
   </aside>
 
   <main>
     <section id="devices" class="view on">
-      <header><h1>Nearby Devices</h1><p class="sub">Devices running bekdesk on this network appear automatically.</p></header>
+      <header><h1>Nearby Devices</h1><p class="sub">Your other computers show up here when bekdesk is open on them and they are on the same Wi-Fi or network.</p></header>
       <div id="device-list" class="list"></div>
       <div class="tablet card" id="tablet"></div>
     </section>
 
     <section id="workspace" class="view">
-      <header><h1>Workspace</h1><p class="sub">Drag computers to match where they sit on your desk. Edges that touch are where the pointer crosses.</p></header>
+      <header><h1>Manage Screens</h1><p class="sub">Drag the screens to match where they sit on your desk. When you share your mouse, the pointer moves to the other computer through the edges that touch.</p></header>
       <div id="canvas" class="canvas"></div>
     </section>
 
     <section id="activity" class="view">
-      <header><h1>Activity</h1></header>
-      <h2>Connections</h2><div id="sessions" class="list"></div>
+      <header><h1>Connections</h1><p class="sub">What is connected right now, files being sent, and a log for troubleshooting.</p></header>
+      <h2>Active now</h2><div id="sessions" class="list"></div>
       <h2>Transfers</h2><div id="transfers" class="list"></div>
-      <h2>Diagnostics <button class="link" data-open="logs">Open logs</button></h2><pre id="log" class="log"></pre>
+      <h2>Log <button class="link" data-open="logs">Open logs</button></h2><pre id="log" class="log"></pre>
     </section>
 
     <section id="settings" class="view">
@@ -46,7 +46,7 @@
       <h2>Blocked devices</h2><div id="blocked" class="list"></div>
       <h2>Engines</h2><div id="engines" class="list small"></div>
       <h2>About</h2>
-      <div class="card small">bekdesk 0.1.0 · GPL-3.0-or-later. Uses Deskflow, Sunshine, Moonlight and Virtual Display Driver, downloaded from their official releases on first use. See THIRD_PARTY.md.</div>
+      <div class="card small">bekdesk 0.1.1 · GPL-3.0-or-later. Uses Deskflow, Sunshine, Moonlight and Virtual Display Driver, downloaded from their official releases on first use. See THIRD_PARTY.md.</div>
     </section>
   </main>
 

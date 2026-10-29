@@ -160,7 +160,8 @@ pub async fn serve(app: Arc<App>, listener: TcpListener) {
 
 async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
     tcp.set_nodelay(true)?;
-    let tls = timeout(Duration::from_secs(10), app.tls.acceptor.accept(tcp)).await??;
+    // Reachability probes and port scans just connect and leave; not worth logging.
+    let Ok(Ok(tls)) = timeout(Duration::from_secs(10), app.tls.acceptor.accept(tcp)).await else { return Ok(()) };
     let fp = fingerprint(tls.get_ref().1.peer_certificates().and_then(|c| c.first()).context("no client certificate")?);
     let mut s = BufReader::new(tls);
     if app.is_blocked(&fp) {
