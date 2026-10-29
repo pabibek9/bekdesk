@@ -134,7 +134,7 @@ function entities() {
     else if (ts.streaming) pill = ["live", `Connected · ${LABEL[t]}`];
     else pill = ["wait", "Not connected"];
     extra = ts.streaming ? `<div class="hint ok">Streaming to ${esc(dn)} now. It switches off by itself when ${esc(dn)} disconnects.</div>`
-      : paired.length ? `<div class="hint">Open Moonlight on ${esc(dn)}, tap <b>${esc(host)}</b>, then <b>Desktop</b>.</div>${sharp}`
+      : paired.length ? `<div class="hint">Open Moonlight on ${esc(dn)}, tap <b>${esc(host)}</b>, then <b>Desktop</b>.${t === "extend" ? " The extra screen appears only while it's connected." : ""}</div>${sharp}`
       : `<div class="hint">Nothing is paired yet. Open Moonlight on the tablet or phone and tap <b>${esc(host)}</b>; it asks for a PIN here.</div>`;
     extra += list;
     if (t === "extend") extra += speedSlider("tablet", dn);
@@ -368,7 +368,9 @@ function wsItems() {
     const st = d.session ? LABEL[d.session.mode] : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
     items.push({ key: d.fp, name: d.name || "Unknown", os: d.os, kind: d.kind || (d.os === "macos" ? "laptop" : "desktop"), mons: monitorsOf(d.monitors), online: d.online, live: !!d.session, state: st });
   }
-  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: (S.tablet_state || {}).name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: true, live: true, state: S.tablet === "extend" ? "Extend" : "Mirror" });
+  // Shown as live only while it is actually streaming; otherwise greyed out as "Not connected".
+  const tsw = S.tablet_state || {};
+  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: tsw.name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: !!tsw.streaming, live: !!tsw.streaming, state: tsw.streaming ? LABEL[S.tablet] : "Not connected" });
   for (const it of items) {
     if (!it.mons.length) { it.mons = [[0, 0, it.kind === "laptop" ? 1920 : 2560, it.kind === "laptop" ? 1200 : 1440]]; it.guess = true; }
     it.b = boxOf(it.mons);

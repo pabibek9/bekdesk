@@ -1,3 +1,13 @@
+## bekdesk 0.1.11 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **No more invisible second screen.** bekdesk's virtual screen now exists only while a tablet or computer is actually showing it: it switches on the moment a device connects and off when it disconnects. If anything else turns it on while nothing is connected (Win+P "Extend", plugging in an HDMI monitor, bekdesk having closed mid-stream), bekdesk switches it off again within a couple of seconds, so windows can't get lost on a screen nobody sees. Only bekdesk's own virtual screen is touched; your laptop screen and HDMI monitors are left alone.
+- **Extend stays on when the tablet disconnects.** It no longer switches itself Off: reconnect from Moonlight any time and the extra screen comes back where you put it.
+- **The extra screen matches the device:** when the tablet asks for a resolution (e.g. Moonlight set to Native), the virtual screen uses exactly that size.
+- **Manage Screens shows the real state:** a tablet that isn't connected is greyed out as "Not connected" instead of showing "Extend".
+
 ## bekdesk 0.1.10 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

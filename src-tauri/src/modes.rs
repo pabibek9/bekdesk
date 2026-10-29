@@ -38,6 +38,7 @@ fn fwd(p: &Path) -> String {
 
 /// Called when the user picks a mode for a device on this (origin) machine.
 pub async fn set_mode(app: &Arc<App>, fp: &str, mode: Mode) -> Result<()> {
+    app.note(fp, "");
     app.cfg.lock().unwrap().modes.insert(fp.to_string(), mode);
     app.save();
     let current = app.sessions.lock().unwrap().get(fp).map(|s| s.mode);
@@ -442,7 +443,15 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     let state = fwd(&dir.join("sunshine_state.json"));
     let apps = dir.join("apps.json");
     // A listener (tablet hosting switched off) offers no apps: Moonlight devices can find it and pair, but not stream.
-    std::fs::write(&apps, if listen_only { r#"{"env":{},"apps":[]}"# } else { r#"{"env":{},"apps":[{"name":"Desktop","image-path":"desktop.png"}]}"# })?;
+    let mut desktop = serde_json::json!({"name": "Desktop", "image-path": "desktop.png"});
+    if output.is_some() {
+        // The virtual screen exists only while a device streams it: Sunshine runs these when a stream starts/ends.
+        let me = std::env::current_exe()?.display().to_string();
+        let target = app.dir.join("vdd_target.txt").display().to_string();
+        desktop["prep-cmd"] = serde_json::json!([{"do": format!("\"{me}\" --vdd-on \"{target}\""), "undo": format!("\"{me}\" --vdd-off"), "elevated": false}]);
+    }
+    let list = if listen_only { serde_json::json!([]) } else { serde_json::json!([desktop]) };
+    std::fs::write(&apps, serde_json::json!({"env": {}, "apps": list}).to_string())?;
     // Sunshine's identity certificate defaults to a folder next to sunshine.exe, which an engine update or
     // reinstall wipes, and a new identity makes every Moonlight client ask for a PIN again. Keep it with our
     // data instead, carrying over one an earlier version left in the engine folder.
@@ -494,6 +503,8 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
             let _ = std::fs::write(&id_file, &id);
             child = spawn(app, &exe, &args, &log)?;
         }
+        // Sunshine knows the screen now; hide it until a device actually connects (prep-cmd brings it back).
+        detach_virtual();
     }
     Ok((child, (exe, args, log), creds))
 }
@@ -700,7 +711,58 @@ async fn attach_virtual(app: &App, key: &str, (w, h): (u32, u32), (x, y): (i32, 
             app.log(format!("keeping the main display: {e:#}"));
         }
     }
+    remember_virtual(app);
     Ok(name)
+}
+
+/// Saves the virtual screen's current "x y w h" for `bekdesk --vdd-on`, and marks it as just attached.
+fn remember_virtual(app: &App) {
+    if let Some((x, y, w, h)) = display::vdd_rect() {
+        let _ = std::fs::write(app.dir.join("vdd_target.txt"), format!("{x} {y} {w} {h}"));
+    }
+    let _ = std::fs::write(app.dir.join("vdd_on.stamp"), "");
+}
+
+/// The virtual screen is shown only while a device streams it. Anything else that turns it on (Win+P "Extend",
+/// plugging in an HDMI monitor, bekdesk having crashed mid-stream) would leave an invisible screen that windows
+/// get lost on, so it is switched off again. Only bekdesk's own virtual screen is touched, never real ones.
+fn hide_unused_virtual(app: &Arc<App>) {
+    if !display::vdd_attached() {
+        return;
+    }
+    // Just attached (a stream is starting): give the device time to connect.
+    let fresh = std::fs::metadata(app.dir.join("vdd_on.stamp")).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d < Duration::from_secs(25));
+    if fresh {
+        return;
+    }
+    let mut keys: Vec<String> = app.sessions.lock().unwrap().iter().filter(|(_, s)| s.origin && s.mode == Mode::Extend).map(|(fp, _)| fp.clone()).collect();
+    if app.tablet_host.lock().unwrap().as_ref().is_some_and(|s| s.mode == Mode::Extend) {
+        keys.push("tablet".into());
+    }
+    if keys.iter().any(|k| stream_state(app, k).1) {
+        return;
+    }
+    detach_virtual();
+    app.log("virtual screen was on with nothing connected; turned it off");
+    // A paused stream would resume without re-running the attach command; end it so the next connect attaches again.
+    for k in keys {
+        let app = app.clone();
+        tokio::spawn(async move {
+            let _ = close_stream(&app, &k).await;
+        });
+    }
+}
+
+/// Ends the running stream of the Sunshine instance for `key` (its undo command then runs).
+async fn close_stream(app: &App, key: &str) -> Result<()> {
+    let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
+    let conf = std::fs::read_to_string(dir.join("sunshine.conf"))?;
+    let port: u16 = conf.lines().find_map(|l| l.strip_prefix("port = ")?.trim().parse().ok()).context("no port")?;
+    let creds = std::fs::read_to_string(dir.join("bekdesk-creds.txt"))?;
+    let (u, p) = creds.split_once(':').context("bad credentials file")?;
+    let client = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(Duration::from_secs(5)).build()?;
+    client.post(format!("https://127.0.0.1:{}/api/apps/close", port + 1)).basic_auth(u, Some(p.trim())).send().await?;
+    Ok(())
 }
 
 async fn attach_inner(app: &App, key: &str, inf: &Path, settings: PathBuf, (w, h): (u32, u32), (x, y): (i32, i32)) -> Result<String> {
@@ -757,6 +819,7 @@ pub async fn reposition_virtual(app: &Arc<App>) {
         display::set_mode(&name, res.0, res.1, x, y).or_else(|_| display::set_mode(&name, 1920, 1080, x, y)).ok()
     })
     .await;
+    remember_virtual(app);
     keep_main_display(app);
 }
 
@@ -965,6 +1028,7 @@ fn keep_main_display(app: &App) {
 
 pub async fn tick(app: &Arc<App>) {
     keep_main_display(app);
+    hide_unused_virtual(app);
     // Restart crashed engines; a closed viewer ends its session and tells the origin.
     let mut ended = vec![];
     {
@@ -977,21 +1041,6 @@ pub async fn tick(app: &Arc<App>) {
     }
     if let Some(s) = app.tablet_host.lock().unwrap().as_mut() {
         check(app, "tablet", s);
-    }
-    // Once the tablet has streamed and then disconnects, switch it off instead of showing a stale "Extend".
-    if app.tablet_host.lock().unwrap().is_some() {
-        let streaming = stream_state(app, "tablet").1;
-        let mut seen = app.tablet_seen.lock().unwrap();
-        if streaming {
-            *seen = Some(Instant::now());
-        } else if seen.is_some_and(|t| t.elapsed() > Duration::from_secs(8)) {
-            *seen = None;
-            app.cfg.lock().unwrap().tablet = Mode::Off;
-            app.save();
-            app.log("tablet disconnected; turned it off");
-        }
-    } else {
-        *app.tablet_seen.lock().unwrap() = None;
     }
     for fp in ended {
         stop_local(app, &fp, false);

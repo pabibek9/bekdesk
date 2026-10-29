@@ -110,6 +110,12 @@ mod win {
         real.into_iter().next().map(|d| d.0)
     }
 
+    /// Whether the virtual monitor is its own screen on the desktop (false after Win+P "PC screen only" or "Duplicate").
+    pub fn vdd_attached() -> bool {
+        let Some(v) = vdd_display() else { return false };
+        attached().iter().any(|d| d.0 == v)
+    }
+
     /// Name of the display whose top-left corner is at (x, y).
     pub fn display_at(x: i32, y: i32) -> Option<String> {
         attached().into_iter().find(|d| d.1 == x && d.2 == y).map(|d| d.0)
@@ -279,7 +285,7 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{cursor_pos, display_at, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{cursor_pos, display_at, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
@@ -302,6 +308,10 @@ pub fn set_mouse_speed(_: u32) {}
 #[cfg(not(windows))]
 pub fn primary_name() -> Option<String> {
     None
+}
+#[cfg(not(windows))]
+pub fn vdd_attached() -> bool {
+    false
 }
 #[cfg(not(windows))]
 pub fn real_display() -> Option<String> {

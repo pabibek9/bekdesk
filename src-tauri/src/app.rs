@@ -164,8 +164,6 @@ pub struct App {
     pub engine_lock: tokio::sync::Mutex<()>,
     /// Woken when a trusted peer asks this computer to flash its screen numbers.
     pub identify: tokio::sync::Notify,
-    /// Last time the tablet was seen streaming; used to switch it off once it disconnects.
-    pub tablet_seen: Mutex<Option<Instant>>,
     /// Moonlight pairing requests waiting for a PIN, by pairing id, with when bekdesk first saw them.
     pub moonlight_pending: Mutex<HashMap<String, (Value, Instant)>>,
     pub tls: crate::net::Tls,
@@ -210,7 +208,6 @@ impl App {
             tablet_host: Default::default(),
             engine_lock: Default::default(),
             identify: Default::default(),
-            tablet_seen: Default::default(),
             moonlight_pending: Default::default(),
             tls,
             seq: AtomicU64::new(1),

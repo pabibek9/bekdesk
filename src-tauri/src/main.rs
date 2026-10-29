@@ -318,12 +318,43 @@ fn show(app: &tauri::AppHandle) {
     let _ = w.set_focus();
 }
 
+/// Run by Sunshine when a stream starts (`--vdd-on <target file>`) or ends (`--vdd-off`), so bekdesk's virtual
+/// screen exists only while a device is showing it. The target file holds "x y w h" saved by bekdesk.
+fn vdd_command(args: &[String]) -> Option<i32> {
+    match args.get(1).map(String::as_str)? {
+        "--vdd-off" => {
+            if let Some(n) = display::vdd_display() {
+                let _ = display::set_mode(&n, 0, 0, 0, 0);
+            }
+            Some(0)
+        }
+        "--vdd-on" => {
+            let target = PathBuf::from(args.get(2)?);
+            let _ = std::fs::write(target.with_file_name("vdd_on.stamp"), "");
+            let v: Vec<i64> = std::fs::read_to_string(&target).unwrap_or_default().split_whitespace().filter_map(|t| t.parse().ok()).collect();
+            let (x, y, w, h) = if v.len() == 4 { (v[0] as i32, v[1] as i32, v[2] as u32, v[3] as u32) } else { (1920, 0, 1920, 1080) };
+            // Use the size the device asked for when it can be shown pixel for pixel; keep the edge that touches this PC.
+            let env = |k: &str| std::env::var(k).ok().and_then(|t| t.parse::<u32>().ok()).filter(|n| (480..=7680).contains(n));
+            let (cw, ch) = (env("SUNSHINE_CLIENT_WIDTH").unwrap_or(w), env("SUNSHINE_CLIENT_HEIGHT").unwrap_or(h));
+            let cx = if x < 0 { x + w as i32 - cw as i32 } else { x };
+            let cy = if y < 0 { y + h as i32 - ch as i32 } else { y };
+            let name = display::vdd_display()?;
+            let ok = display::set_mode(&name, cw, ch, cx, cy).or_else(|_| display::set_mode(&name, w, h, x, y)).or_else(|_| display::set_mode(&name, 1920, 1080, x, y)).is_ok();
+            Some(if ok { 0 } else { 1 })
+        }
+        _ => None,
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 3 && args[1] == "--install-vdd" {
         // Elevated helper path, reached only through an explicit UAC prompt.
         let r = display::install_elevated(std::path::Path::new(&args[2]));
         std::process::exit(if r.is_ok() { 0 } else { 1 });
+    }
+    if let Some(code) = vdd_command(&args) {
+        std::process::exit(code);
     }
     #[cfg(windows)]
     engines_die_with_us();
