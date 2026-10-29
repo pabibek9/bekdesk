@@ -120,6 +120,39 @@ mod win {
 
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 
+    /// Installs new settings for an already-installed driver and restarts its device so the new modes load
+    /// (the driver reads its mode list only at start). One visible UAC prompt; the user can decline.
+    pub fn update_modes(settings: &Path, scratch: &Path) -> Result<()> {
+        let ps1 = scratch.join("vdd-modes.ps1");
+        std::fs::write(
+            &ps1,
+            format!(
+                "Copy-Item -LiteralPath '{}' -Destination 'C:\\VirtualDisplayDriver\\vdd_settings.xml' -Force\r\n\
+                 $d = Get-PnpDevice | Where-Object {{ $_.HardwareID -contains 'Root\\MttVDD' }}\r\n\
+                 $d | Disable-PnpDevice -Confirm:$false\r\nStart-Sleep -Seconds 2\r\n$d | Enable-PnpDevice -Confirm:$false\r\n",
+                settings.display().to_string().replace('\'', "''")
+            ),
+        )?;
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(format!(
+                "$p = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','\"{}\"' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode",
+                ps1.display().to_string().replace('\'', "''")
+            ))
+            .status()
+            .context("starting display settings update")?;
+        if !status.success() {
+            bail!("the virtual display's screen sizes were not updated (declined or failed)");
+        }
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if vdd_display().is_some() {
+                return Ok(());
+            }
+        }
+        bail!("virtual display did not come back after updating its screen sizes")
+    }
+
     pub fn ensure_installed(inf: &Path) -> Result<()> {
         if vdd_display().is_some() {
             return Ok(());
@@ -149,7 +182,7 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{ensure_installed, install_elevated, set_mode, vdd_display, vdd_rect};
+pub use win::{ensure_installed, install_elevated, set_mode, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
@@ -166,6 +199,10 @@ pub fn set_mode(_: &str, _: u32, _: u32, _: i32, _: i32) -> Result<()> {
 #[cfg(not(windows))]
 pub fn ensure_installed(_: &std::path::Path) -> Result<()> {
     anyhow::bail!("Extend Display from this OS is not available yet — use Mirror")
+}
+#[cfg(not(windows))]
+pub fn update_modes(_: &std::path::Path, _: &std::path::Path) -> Result<()> {
+    anyhow::bail!("unsupported")
 }
 #[cfg(not(windows))]
 pub fn install_elevated(_: &std::path::Path) -> Result<()> {
@@ -199,6 +236,28 @@ pub fn device_kind() -> &'static str {
     })
 }
 
+/// Screen sizes the virtual monitor should offer beyond the driver's stock 16:9 list: common 16:10 laptops
+/// and tablets, so they get a pixel-exact screen instead of a blurry 1920x1080.
+pub const EXTRA_MODES: [(u32, u32); 8] = [(1280, 800), (1440, 900), (1680, 1050), (1920, 1200), (2000, 1200), (2560, 1600), (2880, 1800), (2048, 1536)];
+
+/// `vdd_settings.xml` with every mode in `modes` present in its `<resolutions>` list.
+pub fn with_modes(xml: &str, modes: &[(u32, u32)]) -> String {
+    let add: String = modes
+        .iter()
+        .filter(|m| !has_mode(xml, **m))
+        .map(|(w, h)| format!("        <resolution>\r\n            <width>{w}</width>\r\n            <height>{h}</height>\r\n            <refresh_rate>60</refresh_rate>\r\n        </resolution>\r\n"))
+        .collect();
+    match xml.find("</resolutions>") {
+        Some(i) if !add.is_empty() => format!("{}{add}    {}", xml[..i].trim_end_matches([' ', '\t']), &xml[i..]),
+        _ => xml.to_string(),
+    }
+}
+
+pub fn has_mode(xml: &str, (w, h): (u32, u32)) -> bool {
+    let compact: String = xml.chars().filter(|c| !c.is_whitespace()).collect();
+    compact.contains(&format!("<width>{w}</width><height>{h}</height>"))
+}
+
 /// Sunshine (Windows) logs "Currently available display devices:" followed by a JSON array at startup.
 /// Returns the `device_id` of the entry whose `display_name` is `display_name` (e.g. `\\.\DISPLAY3`), which is
 /// what its `output_name` option needs. Uses the last listing in the log.
@@ -230,6 +289,16 @@ pub fn primary_size(monitors: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn adds_missing_modes_once() {
+        let xml = "<resolutions>\r\n        <resolution>\r\n            <width>1920</width>\r\n            <height>1080</height>\r\n        </resolution>\r\n    </resolutions>";
+        let out = with_modes(xml, &[(1920, 1080), (1920, 1200)]);
+        assert!(has_mode(&out, (1920, 1200)) && has_mode(&out, (1920, 1080)));
+        assert_eq!(out.matches("<width>1920</width>").count(), 2);
+        assert_eq!(with_modes(&out, &[(1920, 1200)]), out);
+        assert!(out.ends_with("</resolutions>"));
+    }
+
     #[test]
     fn finds_device_id() {
         let log = r#"[x]: Info: Currently available display devices:

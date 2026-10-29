@@ -5,6 +5,11 @@
 ### Changes
 - **Fix: the tablet kept showing a copy of the screen while bekdesk said Off**, and updates failed with "the process cannot access the file because it is being used by another process". A screen-sharing engine started by an older bekdesk was still running in the background (closing or uninstalling bekdesk didn't stop it). bekdesk now stops leftover engines when it starts, and on Windows every engine it starts now closes automatically when bekdesk closes or crashes.
 
+- **Fix: Moonlight asking for the PIN again after it was already paired.** Sunshine's certificate and Moonlight's identity were stored inside the engine folders, which updates and reinstalls replace; both now live in bekdesk's own data (existing ones are carried over where they still exist, so you may have to pair the tablet one last time).
+- **Sharper picture:** the virtual screen now offers 16:10 and common tablet/laptop sizes (1280×800, 1440×900, 1680×1050, 1920×1200, 2000×1200, 2560×1600, 2880×1800, 2048×1536) plus the receiver's exact size, instead of falling back to a scaled 1920×1080. If the driver was installed by an older bekdesk, Windows asks once to add the sizes. The tablet card now explains how to set Moonlight to **Native** resolution (Moonlight on Android streams 720p unless you change it, and only the tablet can change that).
+- **Copy and paste no longer fight:** Deskflow's own clipboard is now really turned off (the old setting was ignored by Deskflow 1.27), so only bekdesk syncs the clipboard.
+- "Allow Once" is now called **Only this time**, because it asks again after bekdesk restarts; choose **Always Allow** to be asked only once.
+
 Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview

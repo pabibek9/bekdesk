@@ -88,6 +88,8 @@ function entities() {
   const t = S.tablet || "off", ts = S.tablet_state || {};
   const mode = busy.tablet || t;
   let pill = ["ready", "Off"], extra = "";
+  // Moonlight Android streams 720p unless told otherwise, and only the tablet can change that.
+  const sharp = `<div class="hint">For a sharp picture: in Moonlight on the tablet open <b>Settings → Video resolution</b> and pick <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""}.</div>`;
   const steps = `<ol class="steps"><li>Install <b>Moonlight</b> on the tablet (Play Store or F-Droid).</li><li>Open it and tap <b>${esc(S.me.name)}</b>.</li><li>Type the 4-digit PIN it shows here:</li></ol>`;
   if (t !== "off") {
     if (!ts.running) pill = ["wait", "Starting…"];
@@ -96,8 +98,8 @@ function entities() {
     else pill = ["wait", "Waiting for the tablet"];
     const pin = `<div class="pinrow"><input id="tab-pin" inputmode="numeric" placeholder="PIN" maxlength="4" size="5" autocomplete="off" /><button class="btn" id="tab-pair">Pair</button></div>`;
     extra = ts.streaming ? `<div class="hint ok">Streaming to the tablet now.</div>`
-      : ts.paired ? `<div class="hint">Paired. In Moonlight tap <b>${esc(S.me.name)}</b>, then <b>Desktop</b>.</div>`
-      : steps + pin;
+      : ts.paired ? `<div class="hint">Paired. In Moonlight tap <b>${esc(S.me.name)}</b>, then <b>Desktop</b>.</div>${sharp}`
+      : steps + pin + sharp;
     if (t === "extend") extra += `<label class="resrow">Tablet screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>`;
   } else {
     extra = `<div class="hint">There is no bekdesk app for Android yet: the tablet uses the free Moonlight app. Choose Extend or Duplicate to begin.</div>`;
@@ -219,7 +221,7 @@ function renderModal() {
     <div class="small">${esc(osName(r.os))} · ${esc(r.fp.slice(0, 16))}…<br/>Only continue if the other screen shows the same code.</div>
     <div class="code">${esc(r.code)}</div>
     <div class="acts">
-      <button class="btn" data-d="once">Allow Once</button>
+      <button class="btn" data-d="once" title="Asks again next time bekdesk starts">Only this time</button>
       <button class="btn primary" data-d="always">Always Allow</button>
       <button class="btn" data-d="decline">Decline</button>
       <button class="btn danger" data-d="block">Block</button>

@@ -556,17 +556,44 @@ fn placement(app: &App, fp: &str, (w, h): (u32, u32)) -> (i32, i32) {
 
 async fn attach_virtual(app: &App, key: &str, (w, h): (u32, u32), (x, y): (i32, i32)) -> Result<String> {
     let inf = ensure(app, "vdd", key).await?;
+    // The stock mode list is 16:9 only; ship 16:10/tablet sizes and the receiver's own size with the driver,
+    // so the virtual screen matches the receiver pixel for pixel (anything else is scaled and looks blurry).
+    let settings = inf.with_file_name("vdd_settings.xml");
+    let mut modes = display::EXTRA_MODES.to_vec();
+    modes.push((w, h));
+    if let Ok(xml) = std::fs::read_to_string(&settings) {
+        std::fs::write(&settings, display::with_modes(&xml, &modes))?;
+    }
     app.note(key, "Setting up the virtual display (approve the Windows prompt)");
-    let r = tokio::task::spawn_blocking(move || display::ensure_installed(&inf)).await?;
+    let inf2 = inf.clone();
+    let r = tokio::task::spawn_blocking(move || display::ensure_installed(&inf2)).await?;
     app.note(key, "");
     r?;
-    let name = display::vdd_display().context("virtual display not found")?;
-    // The driver offers a fixed mode list (16:9 sizes up to 4K); fall back to 1080p if the receiver's size isn't in it.
-    if display::set_mode(&name, w, h, x, y).is_err() {
-        if let Err(e) = display::set_mode(&name, 1920, 1080, x, y) {
-            detach_virtual();
-            return Err(e);
+    let mut name = display::vdd_display().context("virtual display not found")?;
+    if display::set_mode(&name, w, h, x, y).is_ok() {
+        return Ok(name);
+    }
+    // Installed by an older bekdesk without this size: install the new list once (one Windows prompt).
+    let installed = std::fs::read_to_string(r"C:\VirtualDisplayDriver\vdd_settings.xml").unwrap_or_default();
+    if !display::has_mode(&installed, (w, h)) && settings.exists() {
+        app.note(key, "Adding this screen size to the virtual display (approve the Windows prompt)");
+        let scratch = app.dir.clone();
+        let r = tokio::task::spawn_blocking(move || display::update_modes(&settings, &scratch)).await?;
+        app.note(key, "");
+        match r {
+            Ok(()) => {
+                name = display::vdd_display().context("virtual display not found")?;
+                if display::set_mode(&name, w, h, x, y).is_ok() {
+                    return Ok(name);
+                }
+            }
+            Err(e) => app.log(format!("virtual display sizes: {e:#}")),
         }
+    }
+    app.log(format!("virtual display has no {w}x{h} mode; using 1920x1080 (the picture will be scaled)"));
+    if let Err(e) = display::set_mode(&name, 1920, 1080, x, y) {
+        detach_virtual();
+        return Err(e);
     }
     Ok(name)
 }
