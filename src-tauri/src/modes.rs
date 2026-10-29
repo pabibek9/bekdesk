@@ -425,10 +425,22 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     let state = fwd(&dir.join("sunshine_state.json"));
     let apps = dir.join("apps.json");
     std::fs::write(&apps, r#"{"env":{},"apps":[{"name":"Desktop","image-path":"desktop.png"}]}"#)?;
+    // Sunshine's identity certificate defaults to a folder next to sunshine.exe, which an engine update or
+    // reinstall wipes, and a new identity makes every Moonlight client ask for a PIN again. Keep it with our
+    // data instead, carrying over one an earlier version left in the engine folder.
+    let (pkey, cert) = (dir.join("cakey.pem"), dir.join("cacert.pem"));
+    if !pkey.exists() {
+        let old = exe.parent().map(|d| d.join("config").join("credentials")).unwrap_or_default();
+        if std::fs::copy(old.join("cakey.pem"), &pkey).is_err() || std::fs::copy(old.join("cacert.pem"), &cert).is_err() {
+            let _ = std::fs::remove_file(&pkey);
+        }
+    }
     let conf = format!(
-        "sunshine_name = bekdesk {} for {}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
+        "sunshine_name = bekdesk {} for {}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
         app.name().replace('\n', " "),
         receiver.replace('\n', " "),
+        fwd(&pkey),
+        fwd(&cert),
         fwd(&apps),
         fwd(&dir.join("sunshine.log"))
     );
