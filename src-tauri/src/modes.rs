@@ -500,8 +500,12 @@ async fn attach_virtual(app: &App, key: &str, (w, h): (u32, u32), (x, y): (i32, 
     app.note(key, "");
     r?;
     let name = display::vdd_display().context("virtual display not found")?;
+    // The driver offers a fixed mode list (16:9 sizes up to 4K); fall back to 1080p if the receiver's size isn't in it.
     if display::set_mode(&name, w, h, x, y).is_err() {
-        display::set_mode(&name, 1920, 1080, x, y)?;
+        if let Err(e) = display::set_mode(&name, 1920, 1080, x, y) {
+            detach_virtual();
+            return Err(e);
+        }
     }
     Ok(name)
 }

@@ -1,8 +1,9 @@
-## bekdesk 0.1.2 — preview
+## bekdesk 0.1.3 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
 
 ### Changes
+- Fix: Extend (and Extend to tablet) failed with "display mode … rejected (-1)" because the virtual monitor could not be switched on. It is now activated in extend mode first (verified on Windows 11 with Virtual Display Driver 25.7.23).
 - The Windows installer file now shows the bekdesk logo (0.1.2).
 - New blue app logo, readable on dark and light Start menus and taskbars.
 - Nearby Devices no longer lists this computer itself, and shows step-by-step instructions until another computer is found.

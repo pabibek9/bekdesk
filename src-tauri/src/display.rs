@@ -14,6 +14,7 @@ mod win {
     use std::mem::{size_of, zeroed};
     use std::path::Path;
     use windows_sys::Win32::Devices::DeviceAndDriverInstallation::*;
+    use windows_sys::Win32::Devices::Display::{SetDisplayConfig, SDC_APPLY, SDC_TOPOLOGY_EXTEND};
     use windows_sys::Win32::Graphics::Gdi::*;
 
     fn w(s: &str) -> Vec<u16> {
@@ -52,7 +53,14 @@ mod win {
             dm.Anonymous1.Anonymous2.dmPosition.x = x;
             dm.Anonymous1.Anonymous2.dmPosition.y = y;
             let n = w(name);
-            let r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+            let mut r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+            if r != DISP_CHANGE_SUCCESSFUL && width > 0 {
+                // An inactive IddCx monitor can't be attached with the legacy call (-1); switch the
+                // desktop to "extend" so it becomes active, then set its mode and position.
+                SetDisplayConfig(0, std::ptr::null(), 0, std::ptr::null(), SDC_APPLY | SDC_TOPOLOGY_EXTEND);
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+            }
             if r != DISP_CHANGE_SUCCESSFUL {
                 bail!("display mode {width}x{height} rejected ({r})");
             }
