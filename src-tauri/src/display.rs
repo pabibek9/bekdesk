@@ -87,6 +87,16 @@ mod win {
         out
     }
 
+    /// Refresh rate (Hz) of the main display.
+    pub fn primary_refresh() -> Option<u32> {
+        let n = w(&primary_name()?);
+        unsafe {
+            let mut dm: DEVMODEW = zeroed();
+            dm.dmSize = size_of::<DEVMODEW>() as u16;
+            (EnumDisplaySettingsW(n.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 && dm.dmDisplayFrequency > 1).then_some(dm.dmDisplayFrequency)
+        }
+    }
+
     /// Name of the main (primary) display.
     pub fn primary_name() -> Option<String> {
         attached().into_iter().find(|d| d.3).map(|d| d.0)
@@ -261,10 +271,14 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{cursor_pos, display_at, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{cursor_pos, display_at, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
+    None
+}
+#[cfg(not(windows))]
+pub fn primary_refresh() -> Option<u32> {
     None
 }
 #[cfg(not(windows))]
@@ -374,6 +388,12 @@ pub fn device_id_from_log(log: &str, display_name: &str) -> Option<String> {
     list.iter().find(|d| d["display_name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(display_name)))?["device_id"].as_str().map(String::from)
 }
 
+/// Stream frame rate for a screen refreshing at `hz`: about 90% of it on fast screens, leaving the encoder,
+/// network and decoder headroom so frames don't queue up (lag); 60 Hz screens keep 60, where a lower rate stutters.
+pub fn stream_fps(hz: u32) -> u32 {
+    if hz <= 60 { 60 } else { (hz * 9 / 10).clamp(60, 144) }
+}
+
 /// Windows pointer-speed setting (1..=20) whose multiplier is closest to `factor` times that of `base`.
 /// Multipliers per setting as Windows applies them (without "Enhance pointer precision").
 pub fn speed_for(base: u32, factor: f64) -> u32 {
@@ -398,6 +418,16 @@ pub fn primary_size(monitors: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fps_leaves_headroom() {
+        assert_eq!(stream_fps(60), 60);
+        assert_eq!(stream_fps(100), 90);
+        assert_eq!(stream_fps(120), 108);
+        assert_eq!(stream_fps(144), 129);
+        assert_eq!(stream_fps(240), 144);
+        assert_eq!(stream_fps(0), 60);
+    }
+
     #[test]
     fn pointer_speed_scales() {
         assert_eq!(speed_for(10, 1.0), 10);

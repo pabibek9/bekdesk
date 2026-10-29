@@ -32,6 +32,8 @@
 - **Mouse speed per device (Windows):** each Extend or Share Input device, and the tablet, has a **Mouse speed** slider. bekdesk switches Windows' pointer speed while the mouse is on that device and puts yours back when it comes home (or when bekdesk quits), so a small tablet or a high-resolution laptop no longer feels slow.
 - **Smoother app:** spring animations when opening the app and switching pages, a sliding menu highlight, a "connected" pop on the device card, and smoother dialogs, menus and messages.
 
+- **Frame rate with headroom:** laptop receivers now stream at about 90% of their screen's refresh rate (108 fps on 120 Hz, 129 on 144 Hz, 60 on 60 Hz, at most 144), with the bitrate scaled to match, so frames don't pile up and lag. The tablet card says which frame rate to pick in Moonlight.
+
 Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview

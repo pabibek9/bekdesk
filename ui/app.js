@@ -119,7 +119,7 @@ function entities() {
   const mode = busy.tablet || t;
   let pill = ["ready", "Off"], extra = "";
   // Moonlight on Android streams 720p unless told otherwise, and only the device can change that.
-  const sharp = `<div class="hint">For a sharp picture: in Moonlight open <b>Settings</b>, set <b>Video resolution</b> to <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""} and move <b>Video bitrate</b> to about 40 Mbps.</div>`;
+  const sharp = `<div class="hint">For a sharp picture: in Moonlight open <b>Settings</b>, set <b>Video resolution</b> to <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""} move <b>Video bitrate</b> to about 40 Mbps, and set <b>Frame rate</b> to 90 on a 120 Hz screen (60 on a 60 Hz one).</div>`;
   const steps = `<ol class="steps"><li>Install <b>Moonlight</b> on the tablet or phone (Play Store or F-Droid).</li><li>Open it and tap <b>${esc(S.me.name)}</b>.</li><li>Type the 4-digit PIN it shows here:</li></ol>`;
   if (t !== "off") {
     if (!ts.running) pill = ["wait", "Starting…"];

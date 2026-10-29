@@ -242,9 +242,10 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     // 1:1 to the screen, and ~1.5x Moonlight's default bitrate so text stays crisp. Whether sound
                     // comes along is decided by the host (stream_audio).
                     let (w, h) = display::primary_size(&app2.monitors.lock().unwrap()).unwrap_or((1920, 1080));
+                    let fps = display::stream_fps(display::primary_refresh().unwrap_or(60));
                     let args = [
-                        "stream", &host, "Desktop", "--display-mode", "fullscreen", "--resolution", &format!("{w}x{h}"), "--fps", "60",
-                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--bitrate", &(w * h * 60 / 4000).clamp(10_000, 150_000).to_string(),
+                        "stream", &host, "Desktop", "--display-mode", "fullscreen", "--resolution", &format!("{w}x{h}"), "--fps", &fps.to_string(),
+                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--bitrate", &(w * h * fps / 4000).clamp(10_000, 150_000).to_string(),
                     ]
                     .map(String::from)
                     .to_vec();
