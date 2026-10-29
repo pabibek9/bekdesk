@@ -6,7 +6,7 @@
 
 use crate::app::{App, Mode, Session, SELF};
 use crate::display;
-use crate::engines::{ensure, spawn};
+use crate::engines::{ensure, moonlight_home, spawn, spawn_in};
 use crate::net::{self, Req, DESKFLOW_PORT};
 use anyhow::{bail, Context, Result};
 use rand::Rng;
@@ -220,13 +220,14 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
             let (app2, fp2) = (app.clone(), fp.to_string());
             s.tasks.push(tokio::spawn(async move {
                 let pair = async {
-                    if !moonlight_paired(&exe, &host).await {
+                    let home = moonlight_home(&app2, &exe);
+                    if !moonlight_paired(&exe, &home, &host).await {
                         // The pair window stays open after success, so watch for pairing and close it ourselves.
-                        let mut c = spawn(&app2, &exe, &["pair".into(), host.clone(), "--pin".into(), pin], "moonlight-pair.log")?;
+                        let mut c = spawn_in(&app2, &exe, &["pair".into(), host.clone(), "--pin".into(), pin], "moonlight-pair.log", &home)?;
                         let mut paired = false;
                         for _ in 0..40 {
                             tokio::time::sleep(Duration::from_secs(3)).await;
-                            if moonlight_paired(&exe, &host).await {
+                            if moonlight_paired(&exe, &home, &host).await {
                                 paired = true;
                                 break;
                             }
@@ -246,7 +247,7 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     ]
                     .map(String::from)
                     .to_vec();
-                    spawn(&app2, &exe, &args, "moonlight-stream.log")
+                    spawn_in(&app2, &exe, &args, "moonlight-stream.log", &home)
                 }
                 .await;
                 match pair {
@@ -271,12 +272,9 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
 }
 
 /// `Moonlight list <host>` prints the host's apps only once this client is paired with it.
-async fn moonlight_paired(exe: &Path, host: &str) -> bool {
+async fn moonlight_paired(exe: &Path, home: &Path, host: &str) -> bool {
     let mut c = tokio::process::Command::new(exe);
-    c.args(["list", host]).kill_on_drop(true).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-    if let Some(d) = exe.parent() {
-        c.current_dir(d);
-    }
+    c.args(["list", host]).kill_on_drop(true).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).current_dir(home);
     matches!(tokio::time::timeout(Duration::from_secs(15), c.output()).await, Ok(Ok(o)) if String::from_utf8_lossy(&o.stdout).contains("Desktop"))
 }
 

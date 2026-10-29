@@ -163,6 +163,26 @@ pub async fn prefetch(app: std::sync::Arc<App>) {
     }
 }
 
+/// Portable Moonlight keeps its identity and paired hosts in its working directory (it looks for
+/// `portable.dat` there). Run it from a folder that outlives engine updates, or every update means a new
+/// identity and a PIN prompt. Carries over what an earlier version stored in the engine folder.
+pub fn moonlight_home(app: &App, exe: &Path) -> PathBuf {
+    let home = app.dir.join("moonlight");
+    let _ = std::fs::create_dir_all(&home);
+    let Some(src) = exe.parent() else { return home };
+    if !home.join("portable.dat").exists() && src.join("portable.dat").exists() {
+        let _ = std::fs::copy(src.join("portable.dat"), home.join("portable.dat"));
+        let old = src.join("Moonlight Game Streaming Project");
+        if let Ok(rd) = std::fs::read_dir(&old) {
+            let _ = std::fs::create_dir_all(home.join("Moonlight Game Streaming Project"));
+            for e in rd.flatten() {
+                let _ = std::fs::copy(e.path(), home.join("Moonlight Game Streaming Project").join(e.file_name()));
+            }
+        }
+    }
+    home
+}
+
 /// Engines left running by an earlier bekdesk (crash, update, uninstall) keep serving old streams and lock
 /// their files so updates fail ("used by another process"). Stop anything running from our engines folder.
 pub fn kill_orphans(app: &App) {
@@ -187,12 +207,13 @@ pub fn kill_orphans(app: &App) {
 
 /// Spawn an engine process with output captured to the bekdesk log folder.
 pub fn spawn(app: &App, exe: &Path, args: &[String], log: &str) -> Result<tokio::process::Child> {
+    spawn_in(app, exe, args, log, exe.parent().unwrap_or(Path::new(".")))
+}
+
+pub fn spawn_in(app: &App, exe: &Path, args: &[String], log: &str, cwd: &Path) -> Result<tokio::process::Child> {
     let f = std::fs::File::create(app.dir.join("logs").join(log))?;
     let mut c = tokio::process::Command::new(exe);
-    c.args(args).stdin(std::process::Stdio::null()).stdout(f.try_clone()?).stderr(f).kill_on_drop(true);
-    if let Some(d) = exe.parent() {
-        c.current_dir(d);
-    }
+    c.args(args).stdin(std::process::Stdio::null()).stdout(f.try_clone()?).stderr(f).kill_on_drop(true).current_dir(cwd);
     #[cfg(windows)]
     c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: engines are console programs
     c.spawn().with_context(|| format!("starting {}", exe.display()))
