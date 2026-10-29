@@ -1,8 +1,9 @@
-## bekdesk 0.1.1 — preview
+## bekdesk 0.1.2 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
 
 ### Changes
+- The Windows installer file now shows the bekdesk logo (0.1.2).
 - New blue app logo, readable on dark and light Start menus and taskbars.
 - Nearby Devices no longer lists this computer itself, and shows step-by-step instructions until another computer is found.
 - Devices that stopped answering (closed without saying goodbye) disappear from the list within ~20 seconds instead of showing as "Available".
