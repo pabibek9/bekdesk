@@ -1,0 +1,216 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use bekdesk_core::app::{Caps, Decision, Mode, Pos};
+use bekdesk_core::{clip, discovery, display, modes, net, App};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, State, WindowEvent};
+use tauri_plugin_autostart::ManagerExt;
+
+type Core<'a> = State<'a, Arc<App>>;
+
+#[tauri::command]
+fn snapshot(app: Core) -> serde_json::Value {
+    let mut v = app.snapshot();
+    v["layout"] = serde_json::to_value(modes::default_positions(&app)).unwrap_or_default();
+    v
+}
+
+#[tauri::command]
+async fn set_mode(app: Core<'_>, fp: String, mode: Mode) -> Result<(), String> {
+    modes::set_mode(&app, &fp, mode).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn decide(app: Core, id: u64, decision: String) {
+    let d = match decision.as_str() {
+        "once" => Decision::Once,
+        "always" => Decision::Always,
+        "block" => Decision::Block,
+        _ => Decision::Decline,
+    };
+    app.decide(id, d);
+}
+
+#[tauri::command]
+fn set_caps(app: Core, fp: String, caps: Caps) {
+    if let Some(t) = app.cfg.lock().unwrap().trusted.get_mut(&fp) {
+        t.caps = caps;
+    }
+    app.save();
+}
+
+#[tauri::command]
+fn forget(app: Core, fp: String) {
+    {
+        let mut c = app.cfg.lock().unwrap();
+        c.trusted.remove(&fp);
+        c.modes.remove(&fp);
+    }
+    app.once.lock().unwrap().remove(&fp);
+    app.save();
+    modes::stop_local(&app, &fp, false);
+}
+
+#[tauri::command]
+fn unblock(app: Core, fp: String) {
+    app.cfg.lock().unwrap().blocked.remove(&fp);
+    app.save();
+}
+
+#[tauri::command]
+fn save_layout(app: Core, layout: HashMap<String, Pos>) {
+    app.cfg.lock().unwrap().layout = layout;
+    app.save();
+    let app = app.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = modes::restart_deskflow_server(&app).await;
+    });
+}
+
+#[tauri::command]
+async fn send_files(app: Core<'_>, fp: String, paths: Vec<String>) -> Result<(), String> {
+    let paths = paths.into_iter().map(PathBuf::from).collect();
+    net::send_files(&app, &fp, paths, false).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn set_name(app: Core, name: String) {
+    let name = name.trim().chars().take(60).collect::<String>();
+    if !name.is_empty() {
+        app.cfg.lock().unwrap().name = name;
+        app.save();
+    }
+}
+
+#[tauri::command]
+fn set_tablet(app: Core, mode: Mode, res: String) -> Result<(), String> {
+    if display::parse_res(&res).is_none() {
+        return Err("resolution must look like 1920x1200".into());
+    }
+    let mut c = app.cfg.lock().unwrap();
+    c.tablet = mode;
+    c.tablet_res = res;
+    drop(c);
+    app.note("tablet", "");
+    app.save();
+    Ok(())
+}
+
+#[tauri::command]
+async fn tablet_pin(app: Core<'_>, pin: String) -> Result<(), String> {
+    modes::tablet_pin(&app, pin.trim()).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn autostart(handle: tauri::AppHandle, enable: Option<bool>) -> Result<bool, String> {
+    let m = handle.autolaunch();
+    match enable {
+        Some(true) => m.enable().map_err(|e| e.to_string())?,
+        Some(false) => m.disable().map_err(|e| e.to_string())?,
+        None => {}
+    }
+    m.is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_folder(app: Core, which: String) {
+    let p = if which == "logs" { app.dir.join("logs") } else { app.inbox_dir() };
+    let _ = std::fs::create_dir_all(&p);
+    let opener = if cfg!(windows) { "explorer" } else { "open" };
+    let _ = std::process::Command::new(opener).arg(p).spawn();
+}
+
+fn show(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 3 && args[1] == "--install-vdd" {
+        // Elevated helper path, reached only through an explicit UAC prompt.
+        let r = display::install_elevated(std::path::Path::new(&args[2]));
+        std::process::exit(if r.is_ok() { 0 } else { 1 });
+    }
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--background"])))
+        .setup(move |app| {
+            let dir = app.path().app_data_dir()?;
+            let host = hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "Computer".into());
+            let core = App::new(dir, net::PORT, &host)?;
+            if let Some(w) = app.get_webview_window("main") {
+                let mons: Vec<String> = w
+                    .available_monitors()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|m| format!("{},{},{},{}", m.position().x, m.position().y, m.size().width, m.size().height))
+                    .collect();
+                let primary = w.primary_monitor().ok().flatten().map(|m| format!("{},{}", m.position().x, m.position().y));
+                let mut sorted = mons.clone();
+                if let Some(p) = primary {
+                    sorted.sort_by_key(|m| !m.starts_with(&format!("{p},")));
+                }
+                *core.monitors.lock().unwrap() = sorted.join(";");
+                if args.iter().any(|a| a == "--background") {
+                    let _ = w.hide();
+                }
+            }
+            app.manage(core.clone());
+
+            let rt = tauri::async_runtime::block_on(async { tokio::runtime::Handle::current() });
+            let c = core.clone();
+            tauri::async_runtime::spawn(async move {
+                match tokio::net::TcpListener::bind(("0.0.0.0", c.port)).await {
+                    Ok(l) => net::serve(c, l).await,
+                    Err(e) => c.log(format!("cannot listen on port {}: {e}", c.port)),
+                }
+            });
+            match discovery::start(core.clone()) {
+                Ok(d) => {
+                    app.manage(d);
+                }
+                Err(e) => core.log(format!("discovery unavailable: {e:#}")),
+            }
+            clip::start(core.clone(), rt);
+            tauri::async_runtime::spawn(modes::supervise(core.clone()));
+
+            let open = MenuItem::with_id(app, "open", "Open bekdesk", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &quit])?;
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().ok_or("no icon")?)
+                .tooltip("bekdesk")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, e| match e.id.as_ref() {
+                    "open" => show(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|t, e| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, .. } = e {
+                        show(t.app_handle());
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
+        .on_window_event(|w, e| {
+            if let WindowEvent::CloseRequested { api, .. } = e {
+                // Keep running in the tray so devices stay connected.
+                api.prevent_close();
+                let _ = w.hide();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .run(tauri::generate_context!())
+        .expect("error while running bekdesk");
+}

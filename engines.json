@@ -1,0 +1,70 @@
+{
+  "deskflow": {
+    "windows-x86_64": {
+      "version": "1.27.0",
+      "url": "https://github.com/deskflow/deskflow/releases/download/v1.27.0/deskflow-1.27.0-win-x64-portable.zip",
+      "sha256": "8d19004cc3625623489d96580c1b58fd13ee78185689907fd4478595f93fab9a",
+      "exe": "deskflow-core.exe"
+    },
+    "macos-aarch64": {
+      "version": "1.27.0",
+      "url": "https://github.com/deskflow/deskflow/releases/download/v1.27.0/deskflow-1.27.0-macos-arm64.dmg",
+      "sha256": "dd21e79e566314394214906d3338c505d337af536fc580c022ee3fadffad0c97",
+      "exe": "deskflow-core"
+    },
+    "macos-x86_64": {
+      "version": "1.27.0",
+      "url": "https://github.com/deskflow/deskflow/releases/download/v1.27.0/deskflow-1.27.0-macos-x86_64.dmg",
+      "sha256": "8aca3c77a1b16b9a3d6b8a380e5e38a0e6abf6d241bb32dcf3cf8b67abbff5d8",
+      "exe": "deskflow-core"
+    }
+  },
+  "sunshine": {
+    "windows-x86_64": {
+      "version": "2026.914.233613",
+      "url": "https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-Windows-AMD64-lite.zip",
+      "sha256": "233008e46f4c0e501a586cbfd6c4fd4a4c0d414a0b5fc7f13c070eb92ec3824b",
+      "exe": "sunshine.exe"
+    },
+    "macos-aarch64": {
+      "version": "2026.914.233613",
+      "url": "https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-macOS-arm64.dmg",
+      "sha256": "795f03a389c5726f9a7b15f501dc1ddf204b442cae565859ac83aae027a9e07c",
+      "exe": "sunshine"
+    },
+    "macos-x86_64": {
+      "version": "2026.914.233613",
+      "url": "https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-macOS-x86_64.dmg",
+      "sha256": "764b11674babac0cd838c2883359207a481c462f355ccbfd1ec91f6d44672101",
+      "exe": "sunshine"
+    }
+  },
+  "moonlight": {
+    "windows-x86_64": {
+      "version": "6.2.0",
+      "url": "https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.2.0/MoonlightPortable-x64-6.2.0.zip",
+      "sha256": "6f91d268b41ed5ca8066d9d7578dc403b8db190991ff48f00b1700465f8f7ebf",
+      "exe": "Moonlight.exe"
+    },
+    "macos-aarch64": {
+      "version": "6.2.0",
+      "url": "https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.2.0/Moonlight-6.2.0.dmg",
+      "sha256": "43617e5210d53968fcfb4a46526d1625a9056c6fe97e731673c31193dae776fc",
+      "exe": "Moonlight"
+    },
+    "macos-x86_64": {
+      "version": "6.2.0",
+      "url": "https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.2.0/Moonlight-6.2.0.dmg",
+      "sha256": "43617e5210d53968fcfb4a46526d1625a9056c6fe97e731673c31193dae776fc",
+      "exe": "Moonlight"
+    }
+  },
+  "vdd": {
+    "windows-x86_64": {
+      "version": "25.7.23",
+      "url": "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip",
+      "sha256": "e24210692b442b39af763536330ce78b423f19342b7a7792c26de3944e418b3a",
+      "exe": "MttVDD.inf"
+    }
+  }
+}
