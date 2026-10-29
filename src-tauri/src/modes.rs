@@ -757,6 +757,7 @@ pub async fn reposition_virtual(app: &Arc<App>) {
         display::set_mode(&name, res.0, res.1, x, y).or_else(|_| display::set_mode(&name, 1920, 1080, x, y)).ok()
     })
     .await;
+    keep_main_display(app);
 }
 
 fn detach_virtual() {
@@ -932,7 +933,38 @@ fn check(app: &Arc<App>, fp: &str, s: &mut Session) -> Option<bool> {
     Some(true) // viewer closed: session over
 }
 
+// This computer's own main display, remembered so it can be given back if Windows moves the role to the virtual screen.
+static MAIN_DISPLAY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Windows can make the virtual screen the main display when it's attached or moved (e.g. dragging the tablet
+/// below this PC in Manage Screens), which sends the taskbar and desktop icons to the tablet. Give it back.
+fn keep_main_display(app: &App) {
+    let Some(primary) = display::primary_name() else { return };
+    let mut main = MAIN_DISPLAY.lock().unwrap();
+    if display::vdd_display().as_ref() != Some(&primary) {
+        *main = Some(primary);
+        return;
+    }
+    // Started with the virtual screen already main (e.g. after an update): use this computer's own screen.
+    // After a failure `main` is cleared to "" so it isn't retried every tick.
+    let target = match main.clone() {
+        Some(m) if m.is_empty() => return,
+        Some(m) => Some(m),
+        None => display::real_display(),
+    };
+    if let Some(m) = target {
+        match display::set_primary(&m) {
+            Ok(()) => app.log("Windows made the virtual screen the main display; switched it back"),
+            Err(e) => {
+                app.log(format!("keeping {m} as the main display: {e:#}"));
+                *main = Some(String::new());
+            }
+        }
+    }
+}
+
 pub async fn tick(app: &Arc<App>) {
+    keep_main_display(app);
     // Restart crashed engines; a closed viewer ends its session and tells the origin.
     let mut ended = vec![];
     {

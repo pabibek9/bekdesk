@@ -1,3 +1,10 @@
+## bekdesk 0.1.10 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Fix: dragging the tablet below this PC in Manage Screens made the tablet the main display**, so the desktop icons and taskbar jumped to the tablet and this PC's screen was left empty. bekdesk now checks every couple of seconds (and right after you move a screen) and gives the main-display role back to this computer's own screen. If bekdesk starts with the tablet already the main display, it fixes that too.
+
 ## bekdesk 0.1.9 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

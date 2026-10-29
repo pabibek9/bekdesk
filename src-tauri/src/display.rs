@@ -102,6 +102,14 @@ mod win {
         attached().into_iter().find(|d| d.3).map(|d| d.0)
     }
 
+    /// A real (not virtual) display attached to the desktop, preferring the one at the top-left.
+    pub fn real_display() -> Option<String> {
+        let vdd = vdd_display();
+        let mut real: Vec<_> = attached().into_iter().filter(|d| Some(&d.0) != vdd.as_ref()).collect();
+        real.sort_by_key(|d| (d.2, d.1));
+        real.into_iter().next().map(|d| d.0)
+    }
+
     /// Name of the display whose top-left corner is at (x, y).
     pub fn display_at(x: i32, y: i32) -> Option<String> {
         attached().into_iter().find(|d| d.1 == x && d.2 == y).map(|d| d.0)
@@ -271,7 +279,7 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{cursor_pos, display_at, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{cursor_pos, display_at, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
@@ -293,6 +301,10 @@ pub fn mouse_speed() -> Option<u32> {
 pub fn set_mouse_speed(_: u32) {}
 #[cfg(not(windows))]
 pub fn primary_name() -> Option<String> {
+    None
+}
+#[cfg(not(windows))]
+pub fn real_display() -> Option<String> {
     None
 }
 #[cfg(not(windows))]
