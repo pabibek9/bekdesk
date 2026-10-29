@@ -28,7 +28,7 @@ time. Full guide: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## How it works
 
-bekdesk is a small Rust/Tauri app (~10 MB) that handles discovery, pairing, security, layout and file
+bekdesk is a small Rust/Tauri app (Windows installer ~2.5 MB, macOS universal dmg ~6 MB) that handles discovery, pairing, security, layout and file
 transfer itself, and drives proven open-source engines for the hard real-time parts:
 
 | Job | Engine |

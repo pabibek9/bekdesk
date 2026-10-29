@@ -14,7 +14,7 @@ by bumping a hash in `engines.json`, avoids GPL-2.0-only/GPL-3.0 linking conflic
 bekdesk binary small.
 
 Why Tauri: Rust gives a small, memory-safe core with good TLS/mDNS crates; Tauri uses the OS webview
-(WebView2 / WKWebView), so the app is ~10 MB with no bundled browser, and the UI is plain CSS.
+(WebView2 / WKWebView), so the Windows installer is ~2.5 MB with no bundled browser, and the UI is plain CSS.
 Flutter or Qt would add a large runtime for no gain here.
 
 ## Audit (October 2026)

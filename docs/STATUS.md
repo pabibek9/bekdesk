@@ -28,7 +28,8 @@ Windows/macOS runners. No second physical computer, Mac or Android tablet has be
 | Simultaneous modes to different devices | Built | Separate session per device; separate Sunshine instance/ports per display target. Changing input targets restarts the Deskflow server (~1 s blip for other input targets). |
 | Reconnect after sleep / IP change | Built | Supervisor drops sessions of vanished peers and restores saved modes when they return. |
 | Closing the Moonlight window ends that Mirror/Extend session | Built | Mode is set back to Off on the host. |
-| Start at login, tray icon, close-to-tray | Built | Tauri autostart plugin + tray. |
+| Start at login, tray icon, close-to-tray | Built | Tauri autostart plugin + tray. Closing the window destroys the webview: measured idle in tray ~40 MB working set, ~0.07% CPU (debug build, Windows 11). |
+| Builds on Windows and macOS | **Tested** | GitHub Actions: tests pass and installers build on windows-latest and macos-latest (universal). |
 | Signed/notarized installers | **No** | Unsigned; OS warnings expected. |
 
 ## Known limitations

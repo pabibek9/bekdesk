@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, State, WindowEvent};
+use tauri::{Manager, RunEvent, State, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 
 type Core<'a> = State<'a, Arc<App>>;
@@ -125,11 +125,17 @@ fn open_folder(app: Core, which: String) {
 }
 
 fn show(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
-    }
+    let w = match app.get_webview_window("main") {
+        Some(w) => w,
+        // The window is destroyed when closed (frees the webview's memory); rebuild it from config.
+        None => match app.config().app.windows.first().map(|c| WebviewWindowBuilder::from_config(app, c).and_then(|b| b.build())) {
+            Some(Ok(w)) => w,
+            _ => return,
+        },
+    };
+    let _ = w.show();
+    let _ = w.unminimize();
+    let _ = w.set_focus();
 }
 
 fn main() {
@@ -162,7 +168,7 @@ fn main() {
                 }
                 *core.monitors.lock().unwrap() = sorted.join(";");
                 if args.iter().any(|a| a == "--background") {
-                    let _ = w.hide();
+                    let _ = w.destroy();
                 }
             }
             app.manage(core.clone());
@@ -205,14 +211,13 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .on_window_event(|w, e| {
-            if let WindowEvent::CloseRequested { api, .. } = e {
-                // Keep running in the tray so devices stay connected.
-                api.prevent_close();
-                let _ = w.hide();
-            }
-        })
         .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
-        .run(tauri::generate_context!())
-        .expect("error while running bekdesk");
+        .build(tauri::generate_context!())
+        .expect("error while building bekdesk")
+        .run(|_, e| {
+            // Closing the window keeps bekdesk running in the tray; only Quit (explicit exit code) ends it.
+            if let RunEvent::ExitRequested { api, code: None, .. } = e {
+                api.prevent_exit();
+            }
+        });
 }
