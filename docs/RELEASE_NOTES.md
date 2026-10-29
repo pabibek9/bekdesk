@@ -18,6 +18,17 @@
 - **Clearer errors:** "can't reach" now tells you what to check (bekdesk open on both, same Wi-Fi, Windows Firewall on Private networks); on a Mac, Share Input tells you exactly which permission to allow.
 - **Copy diagnostics** (Connections → Log): copies a full status report with recent engine logs, to paste when asking for help.
 
+- **Your PC stays the main screen:** if Windows makes the new virtual screen the main one when a tablet or laptop extends, bekdesk switches it back. In Manage Screens, **right-click** one of your screens to make it the main display, identify screens, or open Windows display settings.
+- **Sound only where you want it:** by default sound now plays only on this computer. Each Extend/Duplicate device has **Also play sound on …** to add it there too.
+- **The tablet switches itself off** a few seconds after it disconnects, instead of staying on "Extend".
+- **Tablets and phones:** the card only appears once you add one (**+ Add a tablet or phone**) or after one has paired, and shows the device's name. Phones work the same way (Moonlight app).
+- **Identify screens** now also shows on the extended tablet/laptop screen (with its name) and on every connected computer.
+- **Sharper text for laptop receivers:** about 1.5× more bitrate.
+- **Scan** button; bekdesk now checks for devices when you open it or bring it back, about once a minute in the background instead of every 16 seconds.
+- **Connections** lists the tablet/phone too, and empty sections explain what will appear there.
+- **Settings → Devices** lists every computer bekdesk has seen, with **Ask to connect**, **Forget** and **Block**.
+- Better laptop, desktop and tablet icons; GitHub link under About.
+
 Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview

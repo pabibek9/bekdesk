@@ -168,3 +168,14 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 .addr-connect .pinrow { margin-top: 8px; }
 .addr-connect input { width: 240px; text-align: left; font: inherit; letter-spacing: 0; }
 .acts1 { margin-top: 12px; }
+.snd { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--ink2); }
+.addtab { margin-top: 14px; font-size: 13px; }
+.ico.sm { width: 30px; height: 30px; border-radius: 9px; }
+.ico.sm svg { width: 17px; height: 17px; }
+.links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.links:empty { display: none; }
+.ctx { position: fixed; z-index: 20; min-width: 240px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 5px; box-shadow: 0 12px 32px rgba(0,0,0,.18); animation: fade .12s ease; }
+.ctx button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 7px; font-size: 13px; }
+.ctx button:hover:not(:disabled) { background: var(--hover); }
+.ctx button:disabled { color: var(--ink3); cursor: default; }
+#trusted .row2 .btn { flex: none; }

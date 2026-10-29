@@ -18,7 +18,7 @@
 
   <main>
     <section id="devices" class="view on">
-      <header><h1>Nearby Devices</h1><p class="sub">Your other computers show up here when bekdesk is open on them and they are on the same Wi-Fi or network.</p></header>
+      <header class="split"><div><h1>Nearby Devices</h1><p class="sub">Your other computers show up here when bekdesk is open on them and they are on the same Wi-Fi or network.</p></div><button class="btn" id="scan">Scan</button></header>
       <div class="card addr">
         <div class="addr-me">
           <div class="small">Your address</div>
@@ -42,6 +42,7 @@
         <div class="small"></div>
       </div>
       <div id="device-list" class="list"></div>
+      <button class="link addtab hidden" id="add-tablet">+ Add a tablet or phone (Moonlight app)</button>
     </section>
 
     <section id="workspace" class="view">
@@ -63,16 +64,17 @@
         <label class="row"><input type="checkbox" id="autostart" /> Start bekdesk when I sign in</label>
         <div class="row"><button class="link" data-open="inbox">Open received files</button></div>
       </div>
-      <h2>Trusted devices</h2><div id="trusted" class="list"></div>
+      <h2>Devices</h2><div id="trusted" class="list"></div>
       <h2>Blocked devices</h2><div id="blocked" class="list"></div>
       <h2>Engines</h2><div id="engines" class="list small"></div>
       <h2>About</h2>
-      <div class="card small">bekdesk 0.1.6 · GPL-3.0-or-later. Uses Deskflow, Sunshine, Moonlight and Virtual Display Driver, downloaded from their official releases on first use. See THIRD_PARTY.md.</div>
+      <div class="card small">bekdesk 0.1.6 · GPL-3.0-or-later. Uses Deskflow, Sunshine, Moonlight and Virtual Display Driver, downloaded from their official releases on first use. See THIRD_PARTY.md.<div id="links" class="links"></div></div>
     </section>
   </main>
 
   <div id="modal" class="modal hidden"></div>
   <div id="toast" class="toast hidden"></div>
+  <div id="ctx" class="ctx hidden" role="menu"></div>
   <script src="app.js"></script>
 </body>
 </html>

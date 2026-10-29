@@ -32,22 +32,44 @@ fn monitor_string(app: &tauri::AppHandle) -> String {
     real_monitors(app).iter().map(|(x, y, w, h)| format!("{x},{y},{w},{h}")).collect::<Vec<_>>().join(";")
 }
 
-/// Flash each real screen's number for a moment, like Windows' "Identify".
+/// Flash each screen's number for a moment, like Windows' "Identify": this computer's screens, the
+/// virtual screen a tablet or phone extends to (shown with its name), and every connected computer's screens.
 #[tauri::command]
-async fn identify_screens(app: tauri::AppHandle) -> Result<(), String> {
-    for (i, (x, y, mw, mh)) in real_monitors(&app).into_iter().enumerate() {
+async fn identify_screens(app: tauri::AppHandle, core: Core<'_>) -> Result<(), String> {
+    let core = core.inner().clone();
+    let peers: Vec<String> = core.peers.lock().unwrap().keys().filter(|fp| core.knows(fp)).cloned().collect();
+    for fp in peers {
+        let c = core.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = net::request(&c, &fp, &net::Req::Identify).await;
+        });
+    }
+    flash_numbers(&app, &core)
+}
+
+fn flash_numbers(app: &tauri::AppHandle, core: &App) -> Result<(), String> {
+    let mut screens: Vec<((i32, i32, u32, u32), String)> = real_monitors(app).into_iter().enumerate().map(|(i, m)| (m, (i + 1).to_string())).collect();
+    if let Some(v) = display::vdd_rect() {
+        let tablet = core.tablet_host.lock().unwrap().as_ref().is_some_and(|s| s.mode == Mode::Extend);
+        let who = if tablet { modes::stream_state(core, "tablet").0.filter(|n| !n.is_empty()).unwrap_or("Tablet".into()) } else {
+            core.sessions.lock().unwrap().iter().find(|(_, s)| s.origin && s.mode == Mode::Extend).map(|(fp, _)| core.peer_name(fp)).unwrap_or("Extended".into())
+        };
+        screens.push((v, who));
+    }
+    for (i, ((x, y, mw, mh), text)) in screens.into_iter().enumerate() {
         let label = format!("identify{i}");
         if app.get_webview_window(&label).is_some() {
             continue;
         }
-        let w = WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(format!("identify.html?n={}", i + 1).into()))
+        let q: String = text.chars().filter(|c| c.is_alphanumeric() || *c == ' ').map(|c| if c == ' ' { '+' } else { c }).collect();
+        let w = WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App(format!("identify.html?n={q}").into()))
             .decorations(false)
             .always_on_top(true)
             .skip_taskbar(true)
             .resizable(false)
             .focused(false)
             .shadow(false)
-            .inner_size(240.0, 240.0)
+            .inner_size(if text.len() > 2 { 420.0 } else { 240.0 }, 240.0)
             .build()
             .map_err(|e| e.to_string())?;
         if let Ok(sz) = w.outer_size() {
@@ -59,6 +81,58 @@ async fn identify_screens(app: tauri::AppHandle) -> Result<(), String> {
         });
     }
     Ok(())
+}
+
+/// Right-click → "Make this my main display" in Manage Screens (this computer's screens only).
+#[tauri::command]
+fn make_primary(x: i32, y: i32) -> Result<(), String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    display::set_primary(&name).map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn open_display_settings() {
+    let (cmd, arg) = if cfg!(windows) { ("explorer", "ms-settings:display") } else { ("open", "x-apple.systempreferences:com.apple.Displays-Settings.extension") };
+    let _ = std::process::Command::new(cmd).arg(arg).spawn();
+}
+
+/// Whether `key` (a peer or "tablet") also plays this computer's sound. Takes effect on the next connect.
+#[tauri::command]
+fn set_sound(app: Core, key: String, on: bool) {
+    app.cfg.lock().unwrap().sound.insert(key, on);
+    app.save();
+}
+
+#[tauri::command]
+async fn rescan(app: Core<'_>) -> Result<(), String> {
+    modes::rescan(app.inner()).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn pair_device(app: Core<'_>, fp: String) -> Result<(), String> {
+    net::pair(&app, &fp).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+fn block_device(app: Core, fp: String) {
+    let name = app.peer_name(&fp);
+    {
+        let mut c = app.cfg.lock().unwrap();
+        c.trusted.remove(&fp);
+        c.modes.remove(&fp);
+        c.blocked.insert(fp.clone(), name);
+    }
+    app.save();
+    modes::stop_local(&app, &fp, false);
+}
+
+/// Opens one of the project's web pages in the browser (https only).
+#[tauri::command]
+fn open_url(url: String) {
+    if url.starts_with("https://") && !url.contains(['"', ' ', '\'', '\n']) {
+        let _ = if cfg!(windows) { std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn() } else { std::process::Command::new("open").arg(&url).spawn() };
+    }
 }
 
 /// Put bekdesk in a job object that kills every engine it started when bekdesk exits or crashes,
@@ -270,6 +344,13 @@ fn main() {
             clip::start(core.clone(), rt);
             tauri::async_runtime::spawn(modes::supervise(core.clone()));
             tauri::async_runtime::spawn(bekdesk_core::engines::prefetch(core.clone()));
+            let (handle, c) = (app.handle().clone(), core.clone());
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    c.identify.notified().await;
+                    let _ = flash_numbers(&handle, &c);
+                }
+            });
             // Monitors change at runtime (plug/unplug, the virtual monitor); keep the list live.
             let (handle, c) = (app.handle().clone(), core.clone());
             tauri::async_runtime::spawn(async move {
@@ -306,7 +387,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

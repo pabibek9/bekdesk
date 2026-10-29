@@ -20,8 +20,11 @@ const ICON = {
   windows: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
   macos: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg>',
   linux: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
-  tablet: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg>',
+  tablet: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M10.5 18h3"/></svg>',
+  laptop: '<svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="10.5" rx="1.5"/><path d="M2.5 18.5h19l-1.6-3.5H4.1z"/><path d="M10.5 17h3"/></svg>',
+  desktop: '<svg viewBox="0 0 24 24"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M9 21h6M12 16.5V21"/></svg>',
 };
+const iconFor = (kind, os) => ICON[kind] || (os === "macos" ? ICON.laptop : ICON.desktop);
 const osName = (o) => ({ windows: "Windows", macos: "macOS", linux: "Linux" }[o] || o || "");
 
 function toast(msg) {
@@ -66,6 +69,10 @@ function status(d) {
 // Something stuck? Disconnect and connect again with one click.
 const reconnectBtn = (fp) => `<div class="acts1"><button class="btn" data-reconnect="${esc(fp)}">Reconnect</button></div>`;
 
+// Sound plays on this computer only, unless the user also wants it on the device showing the screen.
+const soundToggle = (key, name) => `<label class="snd"><input type="checkbox" data-sound="${esc(key)}" ${(S.sound || {})[key] ? "checked" : ""}/> Also play sound on ${esc(name)}</label>`;
+let addTablet = false;
+
 // One entry per thing you can connect: each nearby computer, plus the Android tablet.
 function entities() {
   const out = [];
@@ -81,36 +88,42 @@ function entities() {
     else if (!d.online) pill = ["off", "Offline"];
     else pill = ["ready", d.trusted || d.once ? "Ready" : "Not paired"];
     out.push({
+      icon: iconFor(d.kind, d.os),
       key: d.fp, kind: "pc", online: d.online, name: d.name || "Unknown device", os: d.os, sub: `${osName(d.os)} · ${status(d)}`, pill, mode,
       modes: ["input", "extend", "mirror", "off"], disabled: !d.online || !!busy[d.fp], extendOk: winHost, note: d.note,
       extra: !d.trusted && !d.once && d.online
         ? `<div class="hint">First connection asks for approval on ${esc(d.name)}. Check that both screens show code <b>${esc(d.code)}</b>.</div>`
         : d.online ? (mode === "input" ? `<div class="hint">Move your mouse past the edge where you put ${esc(d.name)} in Manage Screens. Your keyboard always types on the computer the mouse is on.</div>` : "")
           + `<div class="hint">Drop files on this card to send them to ${esc(d.name)}. Copied files and text sync while Share Input is on.</div>`
+          + (mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "")
           + (mode !== "off" && !busy[d.fp] ? reconnectBtn(d.fp) : "") : "",
     });
   }
   const t = S.tablet || "off", ts = S.tablet_state || {};
+  $("#add-tablet").classList.toggle("hidden", t !== "off" || !!ts.paired || addTablet);
+  if (t === "off" && !ts.paired && !addTablet) return out;
+  const dn = ts.name || "Tablet or phone";
   const mode = busy.tablet || t;
   let pill = ["ready", "Off"], extra = "";
-  // Moonlight Android streams 720p unless told otherwise, and only the tablet can change that.
-  const sharp = `<div class="hint">For a sharp picture: in Moonlight on the tablet open <b>Settings → Video resolution</b> and pick <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""}.</div>`;
-  const steps = `<ol class="steps"><li>Install <b>Moonlight</b> on the tablet (Play Store or F-Droid).</li><li>Open it and tap <b>${esc(S.me.name)}</b>.</li><li>Type the 4-digit PIN it shows here:</li></ol>`;
+  // Moonlight on Android streams 720p unless told otherwise, and only the device can change that.
+  const sharp = `<div class="hint">For a sharp picture: in Moonlight open <b>Settings</b>, set <b>Video resolution</b> to <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""} and move <b>Video bitrate</b> to about 40 Mbps.</div>`;
+  const steps = `<ol class="steps"><li>Install <b>Moonlight</b> on the tablet or phone (Play Store or F-Droid).</li><li>Open it and tap <b>${esc(S.me.name)}</b>.</li><li>Type the 4-digit PIN it shows here:</li></ol>`;
   if (t !== "off") {
     if (!ts.running) pill = ["wait", "Starting…"];
     else if (ts.streaming) pill = ["live", `Connected · ${LABEL[t]}`];
-    else if (ts.paired) pill = ["wait", "Paired · waiting for Moonlight"];
-    else pill = ["wait", "Waiting for the tablet"];
+    else if (ts.paired) pill = ["wait", "Waiting for Moonlight"];
+    else pill = ["wait", "Waiting to pair"];
     const pin = `<div class="pinrow"><input id="tab-pin" inputmode="numeric" placeholder="PIN" maxlength="4" size="5" autocomplete="off" /><button class="btn" id="tab-pair">Pair</button></div>`;
-    extra = ts.streaming ? `<div class="hint ok">Streaming to the tablet now.</div>`
+    extra = ts.streaming ? `<div class="hint ok">Streaming to ${esc(dn)} now. It switches off by itself when ${esc(dn)} disconnects.</div>`
       : ts.paired ? `<div class="hint">Paired. In Moonlight tap <b>${esc(S.me.name)}</b>, then <b>Desktop</b>.</div>${sharp}`
       : steps + pin + sharp;
+    extra += soundToggle("tablet", dn);
     if (!busy.tablet) extra += reconnectBtn("tablet");
-    if (t === "extend") extra += `<label class="resrow">Tablet screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>`;
+    if (t === "extend") extra += `<label class="resrow">Screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>`;
   } else {
-    extra = `<div class="hint">There is no bekdesk app for Android yet: the tablet uses the free Moonlight app. Choose Extend or Duplicate to begin.</div>`;
+    extra = `<div class="hint">Uses the free Moonlight app on the tablet or phone. Choose Extend or Duplicate to connect.</div>`;
   }
-  out.push({ key: "tablet", kind: "tablet", online: true, name: "Android tablet", os: "tablet", sub: S.tablet_status || (t === "off" ? "Uses the Moonlight app" : t === "extend" ? "Extra monitor for this PC" : "Showing this PC's screen"), pill, mode,
+  out.push({ key: "tablet", kind: "tablet", online: true, name: dn, os: "tablet", sub: S.tablet_status || (t === "off" ? "Tablet or phone with Moonlight" : t === "extend" ? "Extra monitor for this PC" : "Showing this PC's screen"), pill, mode,
     modes: winHost ? ["extend", "mirror", "off"] : ["mirror", "off"], disabled: !!busy.tablet, extendOk: winHost, note: S.tablet_note, extra });
   return out;
 }
@@ -143,7 +156,7 @@ function renderDevices() {
     let el = cards.get(e.key);
     if (!el) { el = buildCard(e); cards.set(e.key, el); list.appendChild(el); }
     el.classList.toggle("tab", e.kind === "tablet");
-    setHTML(el.querySelector(".ico"), ICON[e.os] || ICON.windows);
+    setHTML(el.querySelector(".ico"), e.icon || ICON.tablet);
     el.querySelector(".n").textContent = e.name;
     el.querySelector(".s").textContent = e.sub;
     const pill = el.querySelector(".pill");
@@ -181,18 +194,34 @@ $("#device-list").addEventListener("click", async (e) => {
   }
   if (e.target.id === "tab-pair") submitPin();
   const r = e.target.closest("[data-reconnect]");
-  if (r) {
-    const fp = r.dataset.reconnect, mode = fp === "tablet" ? S.tablet : (S.devices.find((d) => d.fp === fp) || {}).mode;
-    if (!mode || mode === "off") return;
-    busy[fp] = mode;
-    render();
-    try {
-      if (fp === "tablet") { await call("set_tablet", { mode: "off", res: S.tablet_res }); await new Promise((ok) => setTimeout(ok, 2500)); await call("set_tablet", { mode, res: S.tablet_res }); }
-      else { await call("set_mode", { fp, mode: "off" }); await call("set_mode", { fp, mode }); }
-      toast("Reconnected");
-    } finally { delete busy[fp]; refresh(); }
-  }
+  if (r) reconnect(r.dataset.reconnect);
 });
+async function reconnect(fp) {
+  const mode = fp === "tablet" ? S.tablet : (S.devices.find((d) => d.fp === fp) || {}).mode;
+  if (!mode || mode === "off") return;
+  busy[fp] = mode;
+  render();
+  try {
+    if (fp === "tablet") { await call("set_tablet", { mode: "off", res: S.tablet_res }); await new Promise((ok) => setTimeout(ok, 2500)); await call("set_tablet", { mode, res: S.tablet_res }); }
+    else { await call("set_mode", { fp, mode: "off" }); await call("set_mode", { fp, mode }); }
+    toast("Reconnected");
+  } finally { delete busy[fp]; refresh(); }
+}
+$("#add-tablet").addEventListener("click", () => { addTablet = true; render(); });
+let lastScan = 0;
+async function scan(manual) {
+  if (!manual && Date.now() - lastScan < 15000) return;
+  lastScan = Date.now();
+  const b = $("#scan");
+  b.disabled = true; b.textContent = "Scanning…";
+  try { await invoke("rescan"); } catch (_) {}
+  b.disabled = false; b.textContent = "Scan";
+  refresh();
+}
+$("#scan").addEventListener("click", () => scan(true));
+// Check for devices when bekdesk is opened or brought back, not constantly in the background.
+document.addEventListener("visibilitychange", () => { if (!document.hidden) scan(false); });
+window.addEventListener("focus", () => scan(false));
 async function submitPin() {
   const i = $("#tab-pin");
   if (!i || i.value.length !== 4) return;
@@ -204,7 +233,14 @@ async function submitPin() {
 $("#device-list").addEventListener("input", (e) => {
   if (e.target.id === "tab-pin") { e.target.value = e.target.value.replace(/\D/g, ""); if (e.target.value.length === 4) submitPin(); }
 });
-$("#device-list").addEventListener("change", (e) => {
+$("#device-list").addEventListener("change", async (e) => {
+  if (e.target.dataset.sound) {
+    const key = e.target.dataset.sound, on = e.target.checked;
+    await call("set_sound", { key, on });
+    S.sound = { ...(S.sound || {}), [key]: on };
+    reconnect(key); // the stream picks up the sound setting when it starts
+    return;
+  }
   if (e.target.id === "tab-res") call("set_tablet", { mode: S.tablet, res: e.target.value }).then(refresh);
 });
 
@@ -279,7 +315,7 @@ function wsItems() {
     const st = d.session ? LABEL[d.session.mode] : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
     items.push({ key: d.fp, name: d.name || "Unknown", os: d.os, kind: d.kind || (d.os === "macos" ? "laptop" : "desktop"), mons: monitorsOf(d.monitors), online: d.online, live: !!d.session, state: st });
   }
-  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: "Android tablet", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: true, live: true, state: S.tablet === "extend" ? "Extend" : "Mirror" });
+  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: (S.tablet_state || {}).name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: true, live: true, state: S.tablet === "extend" ? "Extend" : "Mirror" });
   for (const it of items) {
     if (!it.mons.length) { it.mons = [[0, 0, it.kind === "laptop" ? 1920 : 2560, it.kind === "laptop" ? 1200 : 1440]]; it.guess = true; }
     it.b = boxOf(it.mons);
@@ -309,10 +345,11 @@ function frameHTML(it) {
     const l = ((m[0] - it.b.x0) / PW) * 100, t = ((m[1] - it.b.y0) / PH) * 100, w = (m[2] / PW) * 100, h = (m[3] / PH) * 100;
     const tag = it.kind === "tablet" ? "" : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}</span>`;
     const stand = it.kind === "desktop" ? `<span class="neck"></span><span class="foot"></span>` : "";
-    return `<div class="screen ${it.kind}" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"><i></i>${tag}<span class="res">${m[2]}×${m[3]}${it.guess ? "?" : ""}</span>${stand}</div>`;
+    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-i="${i}"` : "";
+    return `<div class="screen ${it.kind}"${pos} style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"><i></i>${tag}<span class="res">${m[2]}×${m[3]}${it.guess ? "?" : ""}</span>${stand}</div>`;
   }).join("");
   const base = it.kind === "laptop" ? `<span class="kbd"></span>` : "";
-  const ico = ICON[it.kind === "tablet" ? "tablet" : it.os] || ICON.windows;
+  const ico = iconFor(it.kind, it.os);
   const chip = it.me ? "me" : it.live ? "live" : it.online ? "" : "off";
   return `${screens}${base}<div class="glabel"><div class="gn"><span class="gi">${ico}</span><b>${esc(it.name)}</b></div><div class="gc"><span class="chip ${chip}">${esc(it.state)}</span><span class="kind">${KIND_LABEL[it.kind] || ""}</span></div></div>`;
 }
@@ -355,9 +392,34 @@ function renderWorkspace() {
 }
 
 $("#identify").addEventListener("click", () => call("identify_screens"));
+// Right-click one of this computer's screens: make it the main display, identify, or open display settings.
+function hideCtx() { $("#ctx").classList.add("hidden"); }
+$("#canvas").addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const sc = e.target.closest(".group.me .screen");
+  const m = $("#ctx");
+  const main = sc && sc.dataset.i === "0";
+  m.innerHTML = (sc ? `<button data-act="primary" ${main ? "disabled" : ""}>${main ? "This is the main display" : `Make screen ${+sc.dataset.i + 1} the main display`}</button>` : "")
+    + `<button data-act="identify">Identify screens</button><button data-act="settings">Display settings…</button>`;
+  m._sc = sc;
+  m.style.left = Math.min(e.clientX, innerWidth - 260) + "px";
+  m.style.top = Math.min(e.clientY, innerHeight - 140) + "px";
+  m.classList.remove("hidden");
+});
+$("#ctx").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-act]");
+  if (!b || b.disabled) return;
+  const sc = $("#ctx")._sc;
+  hideCtx();
+  if (b.dataset.act === "primary") { await call("make_primary", { x: +sc.dataset.x, y: +sc.dataset.y }); toast("Main display changed"); }
+  if (b.dataset.act === "identify") call("identify_screens");
+  if (b.dataset.act === "settings") invoke("open_display_settings");
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#ctx")) hideCtx(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCtx(); });
 $("#canvas").addEventListener("pointerdown", (e) => {
   const g = e.target.closest(".group");
-  if (!g) return;
+  if (!g || e.button !== 0) return;
   g.setPointerCapture(e.pointerId);
   dragging = { g, sx: e.clientX, sy: e.clientY, l: g._l, t: g._t, moved: false };
   g.classList.add("dragging");
@@ -406,10 +468,13 @@ const fmtTime = (s) => s > 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s / 60)
 
 function renderActivity() {
   const live = S.devices.filter((d) => d.session);
-  setHTML($("#sessions"), live.map((d) => `<div class="card row2"><span class="dot live"></span><div class="grow"><b>${esc(d.name)}</b> · ${LABEL[d.session.mode]} ${d.session.origin ? "(from this computer)" : "(from " + esc(d.name) + ")"}<div class="small">${esc(d.session.status)} · ${esc(d.session.ip)} · ${fmtTime(d.session.uptime)}</div></div></div>`).join("")
-    || `<div class="empty">No active connections.</div>`);
+  const ts = S.tablet_state || {};
+  const tab = S.tablet && S.tablet !== "off"
+    ? `<div class="card row2"><span class="dot ${ts.streaming ? "live" : ""}"></span><div class="grow"><b>${esc(ts.name || "Tablet or phone")}</b> · ${LABEL[S.tablet]} (from this computer)<div class="small">${ts.streaming ? "Streaming now" : ts.paired ? "Paired · waiting for Moonlight" : "Waiting to pair"}</div></div></div>` : "";
+  setHTML($("#sessions"), live.map((d) => `<div class="card row2"><span class="dot live"></span><div class="grow"><b>${esc(d.name)}</b> · ${LABEL[d.session.mode]} ${d.session.origin ? "(from this computer)" : "(from " + esc(d.name) + ")"}<div class="small">${esc(d.session.status)} · ${esc(d.session.ip)} · ${fmtTime(d.session.uptime)}</div></div></div>`).join("") + tab
+    || `<div class="empty">Nothing is connected right now. Pick Share Input, Extend or Duplicate on a device in Nearby Devices.</div>`);
   setHTML($("#transfers"), [...S.transfers].reverse().slice(0, 30).map((t) => `<div class="card"><div class="row2"><div class="grow"><b>${esc(t.label)}</b> <span class="small">${t.outgoing ? "to" : "from"} ${esc(t.peer)} · ${esc(t.state)}</span></div><span class="small">${fmtBytes(t.done)} / ${fmtBytes(t.total)}</span></div><div class="bar"><i style="width:${t.total ? (100 * t.done) / t.total : 100}%"></i></div></div>`).join("")
-    || `<div class="empty">No transfers yet.</div>`);
+    || `<div class="empty">Nothing sent yet. Drop files on a device in Nearby Devices, or with Share Input on, copy files on one computer and paste them on the other. Received files go to Downloads/bekdesk.</div>`);
   $("#log").textContent = S.log.map((l) => { const [ts, ...r] = l.split(" "); return new Date(+ts * 1000).toLocaleTimeString() + "  " + r.join(" "); }).join("\n");
 }
 
@@ -422,17 +487,26 @@ $("#diag").addEventListener("click", async () => {
 // ---------- settings ----------
 function renderSettings() {
   if (document.activeElement !== $("#name")) $("#name").value = S.me.name;
-  const trusted = S.devices.filter((d) => d.trusted);
-  setHTML($("#trusted"), trusted.map((d) => `<div class="card" data-fp="${esc(d.fp)}"><div class="row2"><div class="grow"><b>${esc(d.name)}</b> <span class="small">${esc(osName(d.os))} · ${esc(d.fp.slice(0, 16))}…</span></div><button class="btn danger" data-forget="${esc(d.fp)}">Forget</button></div>
-    <div class="caps">${["input", "clipboard", "files", "screen"].map((k) => `<label><input type="checkbox" data-cap="${k}" ${d.caps[k] ? "checked" : ""}/> ${{ input: "Control this computer", clipboard: "Clipboard", files: "Send files here", screen: "Show its screen here" }[k]}</label>`).join("")}</div></div>`).join("")
-    || `<div class="empty">No trusted devices yet.</div>`);
+  const devs = S.devices.filter((d) => d.trusted || d.online);
+  setHTML($("#trusted"), devs.map((d) => `<div class="card" data-fp="${esc(d.fp)}"><div class="row2"><div class="ico sm">${iconFor(d.kind, d.os)}</div><div class="grow"><b>${esc(d.name)}</b> <span class="small">${esc(osName(d.os))} · ${d.online ? "online" : "offline"} · ${d.trusted ? "trusted" : d.once ? "allowed this session" : "not paired"}</span></div>
+      ${d.trusted ? "" : d.online ? `<button class="btn primary" data-pair="${esc(d.fp)}">Ask to connect</button>` : ""}
+      ${d.trusted ? `<button class="btn" data-forget="${esc(d.fp)}">Forget</button>` : ""}<button class="btn danger" data-block="${esc(d.fp)}">Block</button></div>
+    ${d.trusted ? `<div class="caps">${["input", "clipboard", "files", "screen"].map((k) => `<label><input type="checkbox" data-cap="${k}" ${d.caps[k] ? "checked" : ""}/> ${{ input: "Control this computer", clipboard: "Clipboard", files: "Send files here", screen: "Show its screen here" }[k]}</label>`).join("")}</div>` : ""}</div>`).join("")
+    || `<div class="empty">No devices found yet. Open bekdesk on your other computer, on the same Wi-Fi.</div>`);
+  setHTML($("#links"), Object.entries(LINKS).filter(([, u]) => u).map(([n, u]) => `<button class="btn" data-url="${esc(u)}">${esc(n)}</button>`).join(""));
   setHTML($("#blocked"), Object.entries(S.blocked).map(([fp, n]) => `<div class="card row2"><div class="grow"><b>${esc(n)}</b> <span class="small">${esc(fp.slice(0, 16))}…</span></div><button class="btn" data-unblock="${esc(fp)}">Unblock</button></div>`).join("")
     || `<div class="empty">Nothing blocked.</div>`);
   setHTML($("#engines"), Object.entries(S.engines).map(([k, v]) => `<div class="card row2"><div class="grow"><b>${{ deskflow: "Deskflow (input)", sunshine: "Sunshine (display host)", moonlight: "Moonlight (display viewer)", vdd: "Virtual Display Driver" }[k]}</b> ${v.version ? esc(v.version) : "— not for this OS"}</div><span>${v.installed ? "Installed" : v.version ? "Downloading automatically" : ""}</span></div>`).join(""));
 }
 $("#name").addEventListener("change", (e) => call("set_name", { name: e.target.value }));
 $("#autostart").addEventListener("change", (e) => call("autostart", { enable: e.target.checked }));
+// Only links that are filled in are shown.
+const LINKS = { GitHub: "https://github.com/pabibek9/bekdesk", LinkedIn: "", Instagram: "", "Join the developer team": "" };
+$("#links").addEventListener("click", (e) => { const b = e.target.closest("[data-url]"); if (b) invoke("open_url", { url: b.dataset.url }); });
 $("#trusted").addEventListener("click", async (e) => {
+  const pb = e.target.closest("[data-pair]"), bb = e.target.closest("[data-block]");
+  if (pb) { toast("Waiting for the other computer to accept…"); await call("pair_device", { fp: pb.dataset.pair }); toast("Connected"); refresh(); return; }
+  if (bb && confirm("Block this device? It won't be able to connect until you unblock it.")) { await call("block_device", { fp: bb.dataset.block }); refresh(); return; }
   if (e.target.dataset.forget) { await call("forget", { fp: e.target.dataset.forget }); refresh(); }
 });
 $("#trusted").addEventListener("change", (e) => {

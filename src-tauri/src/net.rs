@@ -38,6 +38,8 @@ pub enum Req {
     Stop,
     /// Who are you? Same public facts mDNS advertises; lets a peer be added by address when discovery is blocked.
     Hello,
+    /// Flash this computer's screen numbers (Manage Screens → Identify screens on a trusted peer).
+    Identify,
     Tunnel,
     Clip { kind: String, len: u64 },
     Files { items: Vec<FileItem>, paste: bool },
@@ -201,6 +203,12 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
                 }
             };
             write_msg(&mut s, &r).await
+        }
+        Req::Identify => {
+            if app.knows(&fp) {
+                app.identify.notify_one();
+            }
+            write_msg(&mut s, &Resp::ok()).await
         }
         Req::Hello => write_msg(&mut s, &Resp { ok: true, info: Some(app.hello()), ..Default::default() }).await,
         Req::Stop => {

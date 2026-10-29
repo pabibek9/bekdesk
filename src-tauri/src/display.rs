@@ -42,6 +42,66 @@ mod win {
         }
     }
 
+    /// `\\.\DISPLAYn` names and current (x, y) of every display attached to the desktop.
+    fn attached() -> Vec<(String, i32, i32, bool)> {
+        let mut out = vec![];
+        unsafe {
+            let mut i = 0;
+            loop {
+                let mut dd: DISPLAY_DEVICEW = zeroed();
+                dd.cb = size_of::<DISPLAY_DEVICEW>() as u32;
+                if EnumDisplayDevicesW(std::ptr::null(), i, &mut dd, 0) == 0 {
+                    break;
+                }
+                i += 1;
+                if dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP == 0 {
+                    continue;
+                }
+                let mut dm: DEVMODEW = zeroed();
+                dm.dmSize = size_of::<DEVMODEW>() as u16;
+                if EnumDisplaySettingsW(dd.DeviceName.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 {
+                    let p = dm.Anonymous1.Anonymous2.dmPosition;
+                    out.push((s(&dd.DeviceName), p.x, p.y, dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE != 0));
+                }
+            }
+        }
+        out
+    }
+
+    /// Name of the main (primary) display.
+    pub fn primary_name() -> Option<String> {
+        attached().into_iter().find(|d| d.3).map(|d| d.0)
+    }
+
+    /// Name of the display whose top-left corner is at (x, y).
+    pub fn display_at(x: i32, y: i32) -> Option<String> {
+        attached().into_iter().find(|d| d.1 == x && d.2 == y).map(|d| d.0)
+    }
+
+    /// Make `name` the main display. Windows puts the main display at (0, 0), so every display is shifted
+    /// by the same amount; the arrangement itself doesn't change.
+    pub fn set_primary(name: &str) -> Result<()> {
+        let all = attached();
+        let Some(&(_, tx, ty, _)) = all.iter().find(|d| d.0 == name).map(|d| d) else { bail!("display {name} not found") };
+        unsafe {
+            for (n, x, y, _) in &all {
+                let mut dm: DEVMODEW = zeroed();
+                dm.dmSize = size_of::<DEVMODEW>() as u16;
+                dm.dmFields = DM_POSITION;
+                dm.Anonymous1.Anonymous2.dmPosition.x = x - tx;
+                dm.Anonymous1.Anonymous2.dmPosition.y = y - ty;
+                let flags = CDS_UPDATEREGISTRY | CDS_NORESET | if n == name { CDS_SET_PRIMARY } else { 0 };
+                let nw = w(n);
+                let r = ChangeDisplaySettingsExW(nw.as_ptr(), &dm, std::ptr::null_mut(), flags, std::ptr::null());
+                if r != DISP_CHANGE_SUCCESSFUL {
+                    bail!("could not move display {n} ({r})");
+                }
+            }
+            ChangeDisplaySettingsExW(std::ptr::null(), std::ptr::null(), std::ptr::null_mut(), 0, std::ptr::null());
+        }
+        Ok(())
+    }
+
     /// Current desktop rectangle (x, y, w, h) of the virtual monitor, if it is attached.
     pub fn vdd_rect() -> Option<(i32, i32, u32, u32)> {
         let name = vdd_display()?;
@@ -182,11 +242,23 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{ensure_installed, install_elevated, set_mode, update_modes, vdd_display, vdd_rect};
+pub use win::{display_at, ensure_installed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
     None
+}
+#[cfg(not(windows))]
+pub fn primary_name() -> Option<String> {
+    None
+}
+#[cfg(not(windows))]
+pub fn display_at(_: i32, _: i32) -> Option<String> {
+    None
+}
+#[cfg(not(windows))]
+pub fn set_primary(_: &str) -> Result<()> {
+    anyhow::bail!("changing the main display from bekdesk is available on Windows; use System Settings → Displays")
 }
 #[cfg(not(windows))]
 pub fn vdd_rect() -> Option<(i32, i32, u32, u32)> {

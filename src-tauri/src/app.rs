@@ -72,6 +72,8 @@ pub struct Config {
     pub tablet_res: String,
     /// Addresses added by hand ("Connect by address"); re-dialled when the device isn't found by discovery.
     pub manual: Vec<String>,
+    /// Devices (peer fingerprint or "tablet") that also play this computer's sound; off by default.
+    pub sound: HashMap<String, bool>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -158,6 +160,10 @@ pub struct App {
     pub deskflow_server: Mutex<Option<tokio::process::Child>>,
     pub tablet_host: Mutex<Option<Session>>,
     pub engine_lock: tokio::sync::Mutex<()>,
+    /// Woken when a trusted peer asks this computer to flash its screen numbers.
+    pub identify: tokio::sync::Notify,
+    /// Last time the tablet was seen streaming; used to switch it off once it disconnects.
+    pub tablet_seen: Mutex<Option<Instant>>,
     pub tls: crate::net::Tls,
     seq: AtomicU64,
 }
@@ -199,6 +205,8 @@ impl App {
             deskflow_server: Default::default(),
             tablet_host: Default::default(),
             engine_lock: Default::default(),
+            identify: Default::default(),
+            tablet_seen: Default::default(),
             tls,
             seq: AtomicU64::new(1),
         }))
@@ -368,7 +376,8 @@ impl App {
             .iter()
             .map(|(fp, s)| {
                 let up = s.since.elapsed().map(|d| d.as_secs()).unwrap_or(0);
-                let (paired, streaming) = if s.origin && matches!(s.mode, Mode::Mirror | Mode::Extend) { crate::modes::stream_state(self, fp) } else { (false, false) };
+                let (paired, streaming) = if s.origin && matches!(s.mode, Mode::Mirror | Mode::Extend) { crate::modes::stream_state(self, fp) } else { (None, false) };
+                let paired = paired.is_some();
                 (fp.clone(), json!({"mode": s.mode, "origin": s.origin, "status": s.status, "ip": s.peer_ip, "uptime": up, "paired": paired, "streaming": streaming}))
             })
             .collect();
@@ -416,7 +425,8 @@ impl App {
             "tablet_res": cfg.tablet_res,
             "tablet_status": self.tablet_host.lock().unwrap().as_ref().map(|s| s.status.clone()),
             "tablet_note": notes.get("tablet"),
-            "tablet_state": {"running": self.tablet_host.lock().unwrap().is_some(), "paired": tablet_state.0, "streaming": tablet_state.1},
+            "tablet_state": {"running": self.tablet_host.lock().unwrap().is_some(), "paired": tablet_state.0.is_some(), "name": tablet_state.0, "streaming": tablet_state.1},
+            "sound": cfg.sound,
             "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),
             "engines": crate::engines::installed(self),

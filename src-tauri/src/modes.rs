@@ -239,11 +239,12 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     }
                     // Tuned for desktop use with the least delay: stream at this screen's real size (sharp, no
                     // rescaling), V-Sync and frame pacing off (each adds up to a frame of latency), pointer maps
-                    // 1:1 to the screen, and sound stays on the computer being shown.
+                    // 1:1 to the screen, and ~1.5x Moonlight's default bitrate so text stays crisp. Whether sound
+                    // comes along is decided by the host (stream_audio).
                     let (w, h) = display::primary_size(&app2.monitors.lock().unwrap()).unwrap_or((1920, 1080));
                     let args = [
                         "stream", &host, "Desktop", "--display-mode", "fullscreen", "--resolution", &format!("{w}x{h}"), "--fps", "60",
-                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--audio-on-host", "--keep-awake",
+                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--bitrate", &(w * h * 60 / 4000).clamp(10_000, 150_000).to_string(),
                     ]
                     .map(String::from)
                     .to_vec();
@@ -458,7 +459,7 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         fwd(&cert),
         fwd(&apps),
         fwd(&dir.join("sunshine.log"))
-    );
+    ) + if app.cfg.lock().unwrap().sound.get(key).copied().unwrap_or(false) { "" } else { "stream_audio = disabled\n" };
     let conf_path = dir.join("sunshine.conf");
     // The virtual monitor's Sunshine id is stable; remembering it lets Extend start Sunshine once instead of twice.
     let id_file = dir.join("output_id.txt");
@@ -495,15 +496,15 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     Ok((child, (exe, args, log), creds))
 }
 
-/// (paired, streaming) for the Sunshine instance run for `key`: paired once a Moonlight client has been
-/// accepted (state file), streaming while the last "CLIENT CONNECTED" in its log has no later "CLIENT DISCONNECTED".
-pub fn stream_state(app: &App, key: &str) -> (bool, bool) {
+/// (name of a paired Moonlight device, streaming) for the Sunshine instance run for `key`: paired once a client
+/// has been accepted (state file), streaming while the last "CLIENT CONNECTED" in its log has no later "CLIENT DISCONNECTED".
+pub fn stream_state(app: &App, key: &str) -> (Option<String>, bool) {
     use std::io::{Read, Seek, SeekFrom};
     let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
     let paired = std::fs::read_to_string(dir.join("sunshine_state.json"))
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .is_some_and(|v| v["root"]["named_devices"].as_array().is_some_and(|a| !a.is_empty()));
+        .and_then(|v| v["root"]["named_devices"].as_array()?.last().map(|d| d["name"].as_str().unwrap_or("").to_string()));
     let streaming = std::fs::File::open(dir.join("sunshine.log"))
         .ok()
         .and_then(|mut f| {
@@ -532,6 +533,9 @@ async fn submit_pin(port: u16, creds: &(String, String), pin: &str, name: &str, 
         .and_then(|ip| pending.iter().find(|p| p["address"].as_str().is_some_and(|a| a.contains(&ip.to_string()))))
         .or(if pending.len() == 1 { pending.first() } else { None });
     let Some(id) = pick.and_then(|p| p["id"].as_str()) else { return Ok(false) };
+    // Use the device's own name when Moonlight sends one ("roth" is the protocol's placeholder).
+    let asked = pick.and_then(|p| p["name"].as_str()).filter(|n| !n.is_empty() && *n != "roth");
+    let name = asked.unwrap_or(name);
     let r: serde_json::Value = client.post(&url).basic_auth(&creds.0, Some(&creds.1)).json(&serde_json::json!({"pairing_id": id, "pin": pin, "name": name})).send().await?.json().await?;
     Ok(r["status"].as_bool() == Some(true) || r["status"].as_str() == Some("true"))
 }
@@ -554,7 +558,7 @@ pub async fn tablet_pin(app: &App, pin: &str) -> Result<()> {
     let dir = app.dir.join("sunshine").join("tablet");
     let creds = std::fs::read_to_string(dir.join("bekdesk-creds.txt")).context("turn on tablet hosting first")?;
     let (u, p) = creds.split_once(':').context("bad credentials file")?;
-    if !submit_pin(TABLET_PORT, &(u.to_string(), p.trim().to_string()), pin, "Moonlight tablet", None).await? {
+    if !submit_pin(TABLET_PORT, &(u.to_string(), p.trim().to_string()), pin, "Tablet or phone", None).await? {
         bail!("No pairing request found — tap this computer in Moonlight on the tablet first, then enter the PIN it shows");
     }
     Ok(())
@@ -587,8 +591,20 @@ async fn attach_virtual(app: &App, key: &str, (w, h): (u32, u32), (x, y): (i32, 
     if let Ok(xml) = std::fs::read_to_string(&settings) {
         std::fs::write(&settings, display::with_modes(&xml, &modes))?;
     }
+    // Windows sometimes makes a newly attached monitor the main one; this computer's screen must stay main.
+    let main = display::primary_name();
+    let name = attach_inner(app, key, &inf, settings, (w, h), (x, y)).await?;
+    if let Some(m) = main.filter(|m| display::primary_name().as_ref() != Some(m)) {
+        if let Err(e) = display::set_primary(&m) {
+            app.log(format!("keeping the main display: {e:#}"));
+        }
+    }
+    Ok(name)
+}
+
+async fn attach_inner(app: &App, key: &str, inf: &Path, settings: PathBuf, (w, h): (u32, u32), (x, y): (i32, i32)) -> Result<String> {
     app.note(key, "Setting up the virtual display (approve the Windows prompt)");
-    let inf2 = inf.clone();
+    let inf2 = inf.to_path_buf();
     let r = tokio::task::spawn_blocking(move || display::ensure_installed(&inf2)).await?;
     app.note(key, "");
     r?;
@@ -719,6 +735,21 @@ pub async fn tick(app: &Arc<App>) {
     if let Some(s) = app.tablet_host.lock().unwrap().as_mut() {
         check(app, "tablet", s);
     }
+    // Once the tablet has streamed and then disconnects, switch it off instead of showing a stale "Extend".
+    if app.tablet_host.lock().unwrap().is_some() {
+        let streaming = stream_state(app, "tablet").1;
+        let mut seen = app.tablet_seen.lock().unwrap();
+        if streaming {
+            *seen = Some(Instant::now());
+        } else if seen.is_some_and(|t| t.elapsed() > Duration::from_secs(8)) {
+            *seen = None;
+            app.cfg.lock().unwrap().tablet = Mode::Off;
+            app.save();
+            app.log("tablet disconnected; turned it off");
+        }
+    } else {
+        *app.tablet_seen.lock().unwrap() = None;
+    }
     for fp in ended {
         stop_local(app, &fp, false);
         let app = app.clone();
@@ -782,6 +813,15 @@ pub async fn tick(app: &Arc<App>) {
 }
 
 /// Mark advertised devices that no longer accept connections as stale so they disappear from the list.
+/// "Scan" button / window shown: check every known device now and re-dial ones added by address.
+pub async fn rescan(app: &Arc<App>) {
+    let manual = app.cfg.lock().unwrap().manual.clone();
+    for host in manual {
+        let _ = net::connect_address(app, &host).await;
+    }
+    probe_peers(app).await;
+}
+
 async fn probe_peers(app: &Arc<App>) {
     let peers: Vec<(String, Vec<IpAddr>, u16)> = app.peers.lock().unwrap().values().map(|p| (p.fp.clone(), p.addrs.clone(), p.port)).collect();
     for (fp, addrs, port) in peers {
@@ -807,7 +847,8 @@ pub async fn supervise(app: Arc<App>) {
     let mut n = 0u32;
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        if n % 8 == 0 {
+        // Background check about once a minute; the UI asks for an immediate one when the window opens.
+        if n % 30 == 0 {
             probe_peers(&app).await;
         }
         // Computers added by address aren't found by mDNS; keep them connected (and re-find them after a restart).
