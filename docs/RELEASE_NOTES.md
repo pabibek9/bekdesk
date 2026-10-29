@@ -1,3 +1,10 @@
+## bekdesk 0.1.12 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Fix: the tablet couldn't connect with Extend in 0.1.11** ("lost connection" in Moonlight). When a device connects, Sunshine starts bekdesk to switch the extra screen on, and Windows refused with "access denied": bekdesk keeps its engines in a group that closes them when bekdesk closes, and that group didn't allow Sunshine to start the command the way it does. The group now allows it; engines still close with bekdesk.
+
 ## bekdesk 0.1.11 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

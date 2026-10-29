@@ -154,7 +154,10 @@ fn engines_die_with_us() {
             return;
         }
         let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // BREAKAWAY_OK: Sunshine starts its stream start/stop commands (`bekdesk --vdd-on/--vdd-off`) with
+        // CREATE_BREAKAWAY_FROM_JOB, which fails with "access denied" unless the job allows it. Engines bekdesk
+        // starts itself don't ask to break away, so they still close with bekdesk.
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
         SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info as *const _ as *const _, std::mem::size_of_val(&info) as u32);
         AssignProcessToJobObject(job, GetCurrentProcess());
         // The handle is deliberately never closed: Windows closes it when bekdesk exits, which ends the job.
