@@ -189,69 +189,123 @@ $("#modal").addEventListener("click", async (e) => {
   refresh();
 });
 
-// ---------- workspace ----------
+// ---------- manage screens ----------
+// Positions are stored in workspace units (1 unit = 10 physical px). This computer is drawn at the
+// centre of the canvas; every other device keeps its offset from it.
 function monitorsOf(s) {
   return String(s || "").split(";").map((m) => m.split(",").map(Number)).filter((v) => v.length === 4 && v[2] > 0);
 }
 function boxOf(mons) {
-  if (!mons.length) return { x0: 0, y0: 0, w: 192, h: 108 };
   const x0 = Math.min(...mons.map((m) => m[0])), y0 = Math.min(...mons.map((m) => m[1]));
   const x1 = Math.max(...mons.map((m) => m[0] + m[2])), y1 = Math.max(...mons.map((m) => m[1] + m[3]));
   return { x0, y0, w: (x1 - x0) / 10, h: (y1 - y0) / 10 };
+}
+function resMon(res, fallback) {
+  const m = /^(\d+)\s*[xX]\s*(\d+)$/.exec(String(res || "").trim());
+  return m ? [[0, 0, +m[1], +m[2]]] : fallback;
+}
+const KIND_LABEL = { laptop: "Laptop", desktop: "Desktop", tablet: "Tablet" };
+
+function wsItems() {
+  const items = [{ key: "self", name: S.me.name, os: S.me.os, kind: S.me.kind || "desktop", mons: monitorsOf(S.me.monitors), me: true, online: true, state: "This PC" }];
+  for (const d of S.devices) {
+    if (!d.trusted && !d.once && !d.online) continue;
+    const st = d.session ? LABEL[d.session.mode] : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
+    items.push({ key: d.fp, name: d.name || "Unknown", os: d.os, kind: d.kind || (d.os === "macos" ? "laptop" : "desktop"), mons: monitorsOf(d.monitors), online: d.online, live: !!d.session, state: st });
+  }
+  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: "Android tablet", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: true, live: true, state: S.tablet === "extend" ? "Extend" : "Mirror" });
+  for (const it of items) {
+    if (!it.mons.length) { it.mons = [[0, 0, it.kind === "laptop" ? 1920 : 2560, it.kind === "laptop" ? 1200 : 1440]]; it.guess = true; }
+    it.b = boxOf(it.mons);
+  }
+  // Devices without a saved spot go around this PC: right, left, below, above, then corners.
+  const L = S.layout || {};
+  const me = items[0];
+  me.p = L.self || { x: 0, y: 0 };
+  const spots = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  let k = 0;
+  for (const it of items.slice(1)) {
+    if (L[it.key]) { it.p = L[it.key]; continue; }
+    const [sx, sy] = spots[k++ % spots.length];
+    it.p = {
+      // gaps leave room for monitor stands and name labels
+      x: Math.round(me.p.x + (sx > 0 ? me.b.w + 24 : sx < 0 ? -it.b.w - 24 : (me.b.w - it.b.w) / 2)),
+      y: Math.round(me.p.y + (sy > 0 ? me.b.h + 70 : sy < 0 ? -it.b.h - 70 : (me.b.h - it.b.h) / 2)),
+    };
+  }
+  return items;
+}
+
+function frameHTML(it, scale) {
+  const screens = it.mons.map((m, i) => {
+    const l = ((m[0] - it.b.x0) / 10) * scale, t = ((m[1] - it.b.y0) / 10) * scale;
+    const w = (m[2] / 10) * scale, h = (m[3] / 10) * scale;
+    const tag = it.mons.length > 1 ? `<span class="num">${i + 1}${i === 0 ? " · Main" : ""}</span>` : "";
+    const stand = it.kind === "desktop" ? `<span class="neck"></span><span class="foot"></span>` : "";
+    return `<div class="screen ${it.kind}" style="left:${l}px;top:${t}px;width:${w}px;height:${h}px"><i></i>${tag}<span class="res">${m[2]}×${m[3]}${it.guess ? "?" : ""}</span>${stand}</div>`;
+  }).join("");
+  const base = it.kind === "laptop" ? `<span class="kbd"></span>` : "";
+  const ico = ICON[it.kind === "tablet" ? "tablet" : it.os] || ICON.windows;
+  const chip = it.me ? "me" : it.live ? "live" : it.online ? "" : "off";
+  return `${screens}${base}<div class="glabel"><span class="gi">${ico}</span><b>${esc(it.name)}</b><span class="chip ${chip}">${esc(it.state)}</span><span class="kind">${KIND_LABEL[it.kind] || ""}</span></div>`;
 }
 
 function renderWorkspace() {
   if (dragging) return;
   const c = $("#canvas");
-  const items = [{ key: "self", name: S.me.name, mons: monitorsOf(S.me.monitors), me: true }]
-    .concat(S.devices.filter((d) => d.trusted || d.once).map((d) => ({ key: d.fp, name: d.name, mons: monitorsOf(d.monitors) })));
-  const L = S.layout || {};
-  const boxes = items.map((it) => ({ ...it, b: boxOf(it.mons), p: L[it.key] || { x: 0, y: 0 } }));
-  const minX = Math.min(...boxes.map((b) => b.p.x)), minY = Math.min(...boxes.map((b) => b.p.y));
-  const maxX = Math.max(...boxes.map((b) => b.p.x + b.b.w)), maxY = Math.max(...boxes.map((b) => b.p.y + b.b.h));
-  const scale = Math.min(1.2, (c.clientWidth - 80) / Math.max(1, maxX - minX), (c.clientHeight - 80) / Math.max(1, maxY - minY));
-  c.dataset.scale = scale; c.dataset.minx = minX; c.dataset.miny = minY;
-  c.innerHTML = boxes.map((it) => {
-    const left = 40 + (it.p.x - minX) * scale, top = 40 + (it.p.y - minY) * scale;
-    const mons = it.mons.map((m) => `<div class="mon" style="left:${((m[0] - it.b.x0) / 10) * scale}px;top:${((m[1] - it.b.y0) / 10) * scale}px;width:${(m[2] / 10) * scale - 2}px;height:${(m[3] / 10) * scale - 2}px"></div>`).join("");
-    return `<div class="box ${it.me ? "me" : ""}" data-key="${esc(it.key)}" style="left:${left}px;top:${top}px;width:${it.b.w * scale}px;height:${it.b.h * scale}px">${mons}<span class="lbl">${esc(it.name)}${it.mons.length ? "" : " (monitor size unknown)"}</span></div>`;
-  }).join("") || `<div class="empty">Pair a device to arrange it.</div>`;
+  const W = c.clientWidth, H = c.clientHeight;
+  if (!W) return;
+  const items = wsItems();
+  const me = items[0];
+  const cx = me.p.x + me.b.w / 2, cy = me.p.y + me.b.h / 2;
+  // Fit everything while keeping this PC centred; leave room for stands and labels.
+  let ex = me.b.w / 2, ey = me.b.h / 2;
+  for (const it of items) {
+    ex = Math.max(ex, Math.abs(it.p.x - cx), Math.abs(it.p.x + it.b.w - cx));
+    ey = Math.max(ey, Math.abs(it.p.y - cy), Math.abs(it.p.y + it.b.h - cy));
+  }
+  const scale = Math.min(1.1, (W / 2 - 40) / ex, (H / 2 - 70) / ey);
+  Object.assign(c.dataset, { scale, cx, cy });
+  c.innerHTML = items.map((it) => {
+    const left = W / 2 + (it.p.x - cx) * scale, top = H / 2 - 20 + (it.p.y - cy) * scale;
+    return `<div class="group k-${it.kind} ${it.me ? "me" : ""} ${it.online === false ? "offline" : ""}" data-key="${esc(it.key)}" style="left:${left}px;top:${top}px;width:${it.b.w * scale}px;height:${it.b.h * scale}px">${frameHTML(it, scale)}</div>`;
+  }).join("") + (items.length === 1 ? `<div class="ws-hint">Pair another computer under Nearby Devices and it appears here. Turn on the Android tablet to place it too.</div>` : "");
 }
 
 $("#canvas").addEventListener("pointerdown", (e) => {
-  const box = e.target.closest(".box");
-  if (!box) return;
-  box.setPointerCapture(e.pointerId);
-  dragging = { box, sx: e.clientX, sy: e.clientY, l: box.offsetLeft, t: box.offsetTop };
-  box.classList.add("dragging");
+  const g = e.target.closest(".group");
+  if (!g) return;
+  g.setPointerCapture(e.pointerId);
+  dragging = { g, sx: e.clientX, sy: e.clientY, l: g.offsetLeft, t: g.offsetTop, moved: false };
+  g.classList.add("dragging");
 });
 $("#canvas").addEventListener("pointermove", (e) => {
   if (!dragging) return;
-  dragging.box.style.left = dragging.l + e.clientX - dragging.sx + "px";
-  dragging.box.style.top = dragging.t + e.clientY - dragging.sy + "px";
+  dragging.moved = true;
+  dragging.g.style.left = dragging.l + e.clientX - dragging.sx + "px";
+  dragging.g.style.top = dragging.t + e.clientY - dragging.sy + "px";
 });
 $("#canvas").addEventListener("pointerup", async () => {
   if (!dragging) return;
-  const c = $("#canvas"), scale = +c.dataset.scale, minX = +c.dataset.minx, minY = +c.dataset.miny;
-  const boxes = [...c.querySelectorAll(".box")];
-  // Snap the dropped box flush against the nearest edge of another box.
-  const d = dragging.box;
+  const { g, moved } = dragging;
+  g.classList.remove("dragging");
+  if (!moved) { dragging = null; return; }
+  const c = $("#canvas"), scale = +c.dataset.scale, cx = +c.dataset.cx, cy = +c.dataset.cy, W = c.clientWidth, H = c.clientHeight;
+  const groups = [...c.querySelectorAll(".group")];
+  // Snap flush to the nearest edge of another device, aligning tops/lefts when close.
   let best = null;
-  for (const o of boxes) {
-    if (o === d) continue;
-    const cands = [
-      [o.offsetLeft + o.offsetWidth, d.offsetTop], [o.offsetLeft - d.offsetWidth, d.offsetTop],
-      [d.offsetLeft, o.offsetTop + o.offsetHeight], [d.offsetLeft, o.offsetTop - d.offsetHeight],
-    ];
-    for (const [x, y] of cands) {
-      const dist = Math.hypot(x - d.offsetLeft, y - d.offsetTop);
+  for (const o of groups) {
+    if (o === g) continue;
+    const top = Math.abs(g.offsetTop - o.offsetTop) < 30 ? o.offsetTop : g.offsetTop;
+    const left = Math.abs(g.offsetLeft - o.offsetLeft) < 30 ? o.offsetLeft : g.offsetLeft;
+    for (const [x, y] of [[o.offsetLeft + o.offsetWidth, top], [o.offsetLeft - g.offsetWidth, top], [left, o.offsetTop + o.offsetHeight], [left, o.offsetTop - g.offsetHeight]]) {
+      const dist = Math.hypot(x - g.offsetLeft, y - g.offsetTop);
       if (!best || dist < best.dist) best = { x, y, dist };
     }
   }
-  if (best && best.dist < 60) { d.style.left = best.x + "px"; d.style.top = best.y + "px"; }
+  if (best && best.dist < 40) { g.style.left = best.x + "px"; g.style.top = best.y + "px"; }
   const layout = {};
-  for (const b of boxes) layout[b.dataset.key] = { x: Math.round((b.offsetLeft - 40) / scale + minX), y: Math.round((b.offsetTop - 40) / scale + minY) };
-  d.classList.remove("dragging");
+  for (const b of groups) layout[b.dataset.key] = { x: Math.round((b.offsetLeft - W / 2) / scale + cx), y: Math.round((b.offsetTop - (H / 2 - 20)) / scale + cy) };
   dragging = null;
   await call("save_layout", { layout });
   refresh();

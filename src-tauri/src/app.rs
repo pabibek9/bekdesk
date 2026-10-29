@@ -81,6 +81,8 @@ pub struct Peer {
     pub port: u16,
     /// "x,y,w,h;..." physical pixels, primary first.
     pub monitors: String,
+    /// "laptop" or "desktop" (empty if the peer didn't say).
+    pub kind: String,
     #[serde(skip)]
     pub fullname: String,
 }
@@ -354,6 +356,7 @@ impl App {
                     "online": p.is_some(),
                     "addrs": p.map(|p| p.addrs.clone()).unwrap_or_default(),
                     "monitors": p.map(|p| p.monitors.clone()).unwrap_or_default(),
+                    "kind": p.map(|p| p.kind.clone()).unwrap_or_default(),
                     "trusted": t.is_some(),
                     "once": once.contains(fp),
                     "caps": t.map(|t| t.caps),
@@ -366,7 +369,7 @@ impl App {
             })
             .collect();
         json!({
-            "me": {"fp": self.id.fp, "name": cfg.name, "os": Self::os(), "monitors": *self.monitors.lock().unwrap(), "pos": cfg.layout.get(SELF), "port": self.port},
+            "me": {"fp": self.id.fp, "name": cfg.name, "os": Self::os(), "kind": crate::display::device_kind(), "monitors": *self.monitors.lock().unwrap(), "pos": cfg.layout.get(SELF), "port": self.port},
             "devices": devices,
             "requests": *self.requests.lock().unwrap(),
             "transfers": *self.transfers.lock().unwrap(),

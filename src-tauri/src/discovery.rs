@@ -16,6 +16,7 @@ pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
     props.insert("fp".to_string(), app.id.fp.clone());
     props.insert("name".to_string(), app.name().chars().take(60).collect());
     props.insert("os".to_string(), App::os().to_string());
+    props.insert("kind".to_string(), crate::display::device_kind().to_string());
     props.insert("mon".to_string(), app.monitors.lock().unwrap().chars().take(200).collect());
     let info = ServiceInfo::new(SERVICE, short, &format!("bk-{short}.local."), "", app.port, props)?.enable_addr_auto();
     mdns.register(info)?;
@@ -39,6 +40,7 @@ pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
                         name: info.get_property_val_str("name").unwrap_or("Unknown").to_string(),
                         os: info.get_property_val_str("os").unwrap_or("").to_string(),
                         monitors: info.get_property_val_str("mon").unwrap_or("").to_string(),
+                        kind: info.get_property_val_str("kind").unwrap_or("").to_string(),
                         addrs,
                         port: info.get_port(),
                         fullname: info.get_fullname().to_string(),

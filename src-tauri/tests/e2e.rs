@@ -16,7 +16,7 @@ async fn node(name: &str) -> (Arc<App>, tempfile::TempDir) {
 fn see(a: &App, b: &App) {
     a.peers.lock().unwrap().insert(
         b.id.fp.clone(),
-        Peer { fp: b.id.fp.clone(), name: b.name(), os: "test".into(), addrs: vec!["127.0.0.1".parse().unwrap()], port: b.port, monitors: String::new(), fullname: String::new() },
+        Peer { fp: b.id.fp.clone(), name: b.name(), os: "test".into(), addrs: vec!["127.0.0.1".parse().unwrap()], port: b.port, monitors: String::new(), kind: String::new(), fullname: String::new() },
     );
 }
 

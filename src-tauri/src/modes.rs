@@ -536,8 +536,7 @@ async fn ensure_tablet_host(app: &Arc<App>) {
                 bail!("already extending to another device");
             }
             let res = display::parse_res(&app.cfg.lock().unwrap().tablet_res).unwrap_or((1920, 1200));
-            let (pw, _) = display::primary_size(&app.monitors.lock().unwrap()).unwrap_or((1920, 1080));
-            Some(attach_virtual(app, "tablet", res, (pw as i32, 0)).await?)
+            Some(attach_virtual(app, "tablet", res, placement(app, "tablet", res)).await?)
         } else {
             None
         };

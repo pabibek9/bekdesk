@@ -153,6 +153,33 @@ pub fn install_elevated(_: &std::path::Path) -> Result<()> {
     anyhow::bail!("unsupported")
 }
 
+/// "laptop" if the machine has a built-in battery, else "desktop"; drives the device frame in Manage Screens.
+pub fn device_kind() -> &'static str {
+    static KIND: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    KIND.get_or_init(|| {
+        #[cfg(windows)]
+        unsafe {
+            use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+            let mut s: SYSTEM_POWER_STATUS = std::mem::zeroed();
+            // BatteryFlag 128 = no system battery, 255 = unknown
+            if GetSystemPowerStatus(&mut s) != 0 && s.BatteryFlag != 128 && s.BatteryFlag != 255 {
+                return "laptop";
+            }
+            "desktop"
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let out = std::process::Command::new("pmset").args(["-g", "batt"]).output();
+            if out.is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("InternalBattery")) {
+                return "laptop";
+            }
+            "desktop"
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        "desktop"
+    })
+}
+
 /// Parse "WxH" with sane bounds.
 pub fn parse_res(s: &str) -> Option<(u32, u32)> {
     let (w, h) = s.trim().split_once(['x', 'X'])?;
