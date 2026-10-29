@@ -10,6 +10,8 @@
 - **Copy and paste no longer fight:** Deskflow's own clipboard is now really turned off (the old setting was ignored by Deskflow 1.27), so only bekdesk syncs the clipboard.
 - "Allow Once" is now called **Only this time**, because it asks again after bekdesk restarts; choose **Always Allow** to be asked only once.
 
+- **Reconnect button:** every connected device (and the tablet) has a **Reconnect** button that disconnects and connects again in one click. The Share Input card now says plainly that your keyboard types on whichever computer the mouse is on.
+
 Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview

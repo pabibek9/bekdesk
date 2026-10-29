@@ -63,6 +63,9 @@ function status(d) {
   return "Not paired yet";
 }
 
+// Something stuck? Disconnect and connect again with one click.
+const reconnectBtn = (fp) => `<div class="acts1"><button class="btn" data-reconnect="${esc(fp)}">Reconnect</button></div>`;
+
 // One entry per thing you can connect: each nearby computer, plus the Android tablet.
 function entities() {
   const out = [];
@@ -82,7 +85,9 @@ function entities() {
       modes: ["input", "extend", "mirror", "off"], disabled: !d.online || !!busy[d.fp], extendOk: winHost, note: d.note,
       extra: !d.trusted && !d.once && d.online
         ? `<div class="hint">First connection asks for approval on ${esc(d.name)}. Check that both screens show code <b>${esc(d.code)}</b>.</div>`
-        : d.online ? `<div class="hint">Drop files on this card to send them to ${esc(d.name)}. Copied files and text sync while Share Input is on.</div>` : "",
+        : d.online ? (mode === "input" ? `<div class="hint">Move your mouse past the edge where you put ${esc(d.name)} in Manage Screens. Your keyboard always types on the computer the mouse is on.</div>` : "")
+          + `<div class="hint">Drop files on this card to send them to ${esc(d.name)}. Copied files and text sync while Share Input is on.</div>`
+          + (mode !== "off" && !busy[d.fp] ? reconnectBtn(d.fp) : "") : "",
     });
   }
   const t = S.tablet || "off", ts = S.tablet_state || {};
@@ -100,6 +105,7 @@ function entities() {
     extra = ts.streaming ? `<div class="hint ok">Streaming to the tablet now.</div>`
       : ts.paired ? `<div class="hint">Paired. In Moonlight tap <b>${esc(S.me.name)}</b>, then <b>Desktop</b>.</div>${sharp}`
       : steps + pin + sharp;
+    if (!busy.tablet) extra += reconnectBtn("tablet");
     if (t === "extend") extra += `<label class="resrow">Tablet screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>`;
   } else {
     extra = `<div class="hint">There is no bekdesk app for Android yet: the tablet uses the free Moonlight app. Choose Extend or Duplicate to begin.</div>`;
@@ -174,6 +180,18 @@ $("#device-list").addEventListener("click", async (e) => {
     return;
   }
   if (e.target.id === "tab-pair") submitPin();
+  const r = e.target.closest("[data-reconnect]");
+  if (r) {
+    const fp = r.dataset.reconnect, mode = fp === "tablet" ? S.tablet : (S.devices.find((d) => d.fp === fp) || {}).mode;
+    if (!mode || mode === "off") return;
+    busy[fp] = mode;
+    render();
+    try {
+      if (fp === "tablet") { await call("set_tablet", { mode: "off", res: S.tablet_res }); await new Promise((ok) => setTimeout(ok, 2500)); await call("set_tablet", { mode, res: S.tablet_res }); }
+      else { await call("set_mode", { fp, mode: "off" }); await call("set_mode", { fp, mode }); }
+      toast("Reconnected");
+    } finally { delete busy[fp]; refresh(); }
+  }
 });
 async function submitPin() {
   const i = $("#tab-pin");

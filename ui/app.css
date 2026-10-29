@@ -167,3 +167,4 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 .addr-connect { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 12px; }
 .addr-connect .pinrow { margin-top: 8px; }
 .addr-connect input { width: 240px; text-align: left; font: inherit; letter-spacing: 0; }
+.acts1 { margin-top: 12px; }
