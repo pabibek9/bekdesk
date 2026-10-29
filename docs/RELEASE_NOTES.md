@@ -1,4 +1,4 @@
-## bekdesk 0.1.6 — preview
+## bekdesk 0.1.7 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
 
@@ -34,7 +34,7 @@
 
 - **Frame rate with headroom:** laptop receivers now stream at about 90% of their screen's refresh rate (108 fps on 120 Hz, 129 on 144 Hz, 60 on 60 Hz, at most 144), with the bitrate scaled to match, so frames don't pile up and lag. The tablet card says which frame rate to pick in Moonlight.
 
-Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
+Everything from 0.1.5 and 0.1.6 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview
 The Extend fix and tablet status are based on Sunshine's documentation and source and have not been tried on real hardware yet. Tested on one Windows PC and in CI only; input sharing and screen streaming have not yet been tested between two physical machines.
