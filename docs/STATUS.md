@@ -30,6 +30,7 @@ Windows/macOS runners. No second physical computer, Mac or Android tablet has be
 | Closing the Moonlight window ends that Mirror/Extend session | Built | Mode is set back to Off on the host. |
 | Start at login, tray icon, close-to-tray | Built | Tauri autostart plugin + tray. Closing the window destroys the webview: measured idle in tray ~40 MB working set, ~0.07% CPU (debug build, Windows 11). |
 | Builds on Windows and macOS | **Tested** | GitHub Actions: tests pass and installers build on windows-latest and macos-latest (universal). |
+| Windows installer | **Tested** | v0.1.0 release installer: silent per-user install (no admin), registered in Apps, launches to tray; idle release build ~54 MB working set, 6 MB private, ~0.1% CPU. |
 | Signed/notarized installers | **No** | Unsigned; OS warnings expected. |
 
 ## Known limitations

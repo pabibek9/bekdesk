@@ -91,10 +91,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
       - name: Third-party license report
-        continue-on-error: true
         run: |
-          cargo install cargo-about --locked --quiet
           cd src-tauri && cargo about generate -c ../about.toml ../about.hbs -o ../dist/THIRD_PARTY_LICENSES.html
       - name: Checksums and docs
         run: |
