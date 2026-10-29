@@ -236,7 +236,16 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                             bail!("display pairing did not complete");
                         }
                     }
-                    let args = vec!["stream".to_string(), host, "Desktop".into(), "--display-mode".into(), "fullscreen".into()];
+                    // Tuned for desktop use with the least delay: stream at this screen's real size (sharp, no
+                    // rescaling), V-Sync and frame pacing off (each adds up to a frame of latency), pointer maps
+                    // 1:1 to the screen, and sound stays on the computer being shown.
+                    let (w, h) = display::primary_size(&app2.monitors.lock().unwrap()).unwrap_or((1920, 1080));
+                    let args = [
+                        "stream", &host, "Desktop", "--display-mode", "fullscreen", "--resolution", &format!("{w}x{h}"), "--fps", "60",
+                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--audio-on-host", "--keep-awake",
+                    ]
+                    .map(String::from)
+                    .to_vec();
                     spawn(&app2, &exe, &args, "moonlight-stream.log")
                 }
                 .await;
