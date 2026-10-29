@@ -412,28 +412,44 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
             c
         }
     };
+    let _ = std::fs::remove_file(dir.join("sunshine.log"));
     let state = fwd(&dir.join("sunshine_state.json"));
     let apps = dir.join("apps.json");
     std::fs::write(&apps, r#"{"env":{},"apps":[{"name":"Desktop","image-path":"desktop.png"}]}"#)?;
-    let mut conf = format!(
+    let conf = format!(
         "sunshine_name = bekdesk {} for {}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
         app.name().replace('\n', " "),
         receiver.replace('\n', " "),
         fwd(&apps),
         fwd(&dir.join("sunshine.log"))
     );
-    if let Some(o) = output {
-        conf += &format!("output_name = {o}\n");
-    }
     let conf_path = dir.join("sunshine.conf");
-    std::fs::write(&conf_path, conf)?;
+    std::fs::write(&conf_path, &conf)?;
     if fresh {
         let mut c = spawn(app, &exe, &[fwd(&conf_path), "--creds".into(), creds.0.clone(), creds.1.clone()], "sunshine-creds.log")?;
         let _ = tokio::time::timeout(Duration::from_secs(30), c.wait()).await;
     }
     let args = vec![fwd(&conf_path)];
     let log = format!("sunshine-{}.log", &key[..key.len().min(12)]);
-    let child = spawn(app, &exe, &args, &log)?;
+    let mut child = spawn(app, &exe, &args, &log)?;
+    if let Some(o) = output {
+        // Windows Sunshine selects a monitor by its device_id GUID, not `\\.\DISPLAYn`; an unknown name
+        // silently falls back to the primary display (which looks like Mirror). Sunshine lists the GUIDs in
+        // its own log at startup, so read it from there and restart with `output_name` set.
+        let sun_log = dir.join("sunshine.log");
+        let mut id = None;
+        for _ in 0..30 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            id = std::fs::read_to_string(&sun_log).ok().and_then(|t| display::device_id_from_log(&t, o));
+            if id.is_some() {
+                break;
+            }
+        }
+        let id = id.context("Sunshine did not list the virtual monitor, so it can't be extended onto it (see sunshine.log)")?;
+        let _ = child.kill().await;
+        std::fs::write(&conf_path, format!("{conf}output_name = {id}\n"))?;
+        child = spawn(app, &exe, &args, &log)?;
+    }
     Ok((child, (exe, args, log), creds))
 }
 

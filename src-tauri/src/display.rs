@@ -180,6 +180,21 @@ pub fn device_kind() -> &'static str {
     })
 }
 
+/// Sunshine (Windows) logs "Currently available display devices:" followed by a JSON array at startup.
+/// Returns the `device_id` of the entry whose `display_name` is `display_name` (e.g. `\\.\DISPLAY3`), which is
+/// what its `output_name` option needs. Uses the last listing in the log.
+pub fn device_id_from_log(log: &str, display_name: &str) -> Option<String> {
+    let rest = &log[log.rfind("Currently available display devices:")?..];
+    let start = rest.find('[')?;
+    let mut depth = 0;
+    let end = rest[start..].char_indices().find_map(|(i, c)| {
+        depth += (c == '[') as i32 - (c == ']') as i32;
+        (depth == 0).then_some(start + i + 1)
+    })?;
+    let list: Vec<serde_json::Value> = serde_json::from_str(&rest[start..end]).ok()?;
+    list.iter().find(|d| d["display_name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(display_name)))?["device_id"].as_str().map(String::from)
+}
+
 /// Parse "WxH" with sane bounds.
 pub fn parse_res(s: &str) -> Option<(u32, u32)> {
     let (w, h) = s.trim().split_once(['x', 'X'])?;
@@ -196,6 +211,19 @@ pub fn primary_size(monitors: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn finds_device_id() {
+        let log = r#"[x]: Info: Currently available display devices:
+[
+  {"device_id": "{aaa}", "display_name": "\\\\.\\DISPLAY1", "info": {"a": [1]}},
+  {"device_id": "{bbb}", "display_name": "\\\\.\\DISPLAY3"}
+]
+[x]: Info: more"#;
+        assert_eq!(device_id_from_log(log, r"\\.\DISPLAY3").as_deref(), Some("{bbb}"));
+        assert_eq!(device_id_from_log(log, r"\\.\DISPLAY9"), None);
+        assert_eq!(device_id_from_log("nothing", "x"), None);
+    }
+
     #[test]
     fn parses() {
         assert_eq!(parse_res("2560x1600"), Some((2560, 1600)));
