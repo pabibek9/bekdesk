@@ -520,14 +520,21 @@ pub fn stream_state(app: &App, key: &str) -> (Option<String>, bool) {
 
 /// Moonlight devices paired with the Sunshine instance run for `key`, as (uuid, name).
 pub fn moonlight_devices(app: &App, key: &str) -> Vec<(String, String)> {
+    paired_entries(app, key).into_iter().map(|(uuid, name, _)| (uuid, name)).collect()
+}
+
+/// (uuid, name, certificate) of every paired entry in Sunshine's state file, oldest first.
+fn paired_entries(app: &App, key: &str) -> Vec<(String, String, String)> {
     let path = app.dir.join("sunshine").join(&key[..key.len().min(12)]).join("sunshine_state.json");
     let v: serde_json::Value = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-    v["root"]["named_devices"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|d| (d["uuid"].as_str().unwrap_or("").to_string(), d["name"].as_str().unwrap_or("").to_string()))
-        .collect()
+    let s = |d: &serde_json::Value, k: &str| d[k].as_str().unwrap_or("").to_string();
+    v["root"]["named_devices"].as_array().into_iter().flatten().map(|d| (s(d, "uuid"), s(d, "name"), s(d, "cert"))).collect()
+}
+
+/// Sunshine adds a new entry every time the same device pairs again (same certificate, new uuid), so one tablet
+/// shows up under several names. Returns the uuids of all but the newest entry per certificate.
+fn duplicate_uuids(entries: &[(String, String, String)]) -> Vec<String> {
+    entries.iter().enumerate().filter(|(i, e)| entries[i + 1..].iter().any(|later| later.2 == e.2)).map(|(_, e)| e.0.clone()).collect()
 }
 
 fn streaming_in_log(t: &str) -> bool {
@@ -594,6 +601,7 @@ pub async fn tablet_pin(app: &App, id: &str, pin: &str, name: &str) -> Result<()
         bail!("Pairing failed: the PIN didn't match. Tap this computer in Moonlight again and type the new PIN");
     }
     app.log(format!("paired Moonlight device {name}"));
+    remove_duplicates(app).await;
     Ok(())
 }
 
@@ -610,6 +618,14 @@ pub async fn tablet_forget(app: &App, uuid: &str) -> Result<()> {
         bail!("Sunshine didn't remove that device");
     }
     Ok(())
+}
+
+async fn remove_duplicates(app: &App) {
+    for uuid in duplicate_uuids(&paired_entries(app, "tablet")) {
+        if let Err(e) = tablet_forget(app, &uuid).await {
+            app.log(format!("removing duplicate Moonlight entry: {e:#}"));
+        }
+    }
 }
 
 /// Pairing requests waiting in the tablet host, kept for the UI. Sunshine keeps a request after Moonlight has given
@@ -632,9 +648,21 @@ async fn refresh_pending(app: &App) {
             }
         }
     }
+    // Moonlight retrying leaves several requests from the same device; only its newest one can still be answered.
+    {
+        let p = app.moonlight_pending.lock().unwrap();
+        for (id, (v, seen)) in p.iter() {
+            let addr = v["address"].as_str().unwrap_or("");
+            if !addr.is_empty() && p.iter().any(|(o, (w, t))| o != id && w["address"].as_str() == Some(addr) && t > seen) {
+                stale.push(id.clone());
+            }
+        }
+    }
+    stale.dedup();
     for id in stale {
         let _ = tablet_decline(app, &id).await;
     }
+    remove_duplicates(app).await;
 }
 
 /// Where the virtual monitor goes relative to this computer's primary display, from the Workspace layout.
@@ -1059,6 +1087,14 @@ pub async fn supervise(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_newest_entry_per_device() {
+        let e = |u: &str, c: &str| (u.to_string(), String::new(), c.to_string());
+        let list = [e("a", "tab"), e("b", "phone"), e("c", "tab"), e("d", "tab")];
+        assert_eq!(duplicate_uuids(&list), vec!["a".to_string(), "c".to_string()]);
+        assert!(duplicate_uuids(&[e("x", "1"), e("y", "2")]).is_empty());
+    }
 
     #[test]
     fn finds_last_deskflow_switch() {

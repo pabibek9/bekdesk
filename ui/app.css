@@ -220,3 +220,4 @@ body { animation: appIn .55s var(--spring) both; }
 .spd { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12.5px; color: var(--ink2); }
 .spd input { flex: 1; max-width: 220px; accent-color: var(--accent); border: 0; padding: 0; background: none; }
 .spd b { min-width: 42px; color: var(--ink); font-weight: 600; }
+.armed { color: var(--bad) !important; font-weight: 600; }

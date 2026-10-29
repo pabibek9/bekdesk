@@ -1,8 +1,13 @@
-## bekdesk 0.1.8 — preview
+## bekdesk 0.1.9 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
 
 ### Changes
+- **Fix: one tablet listed under several names.** Each time the same tablet paired again, Sunshine added another entry and kept the old ones. bekdesk now keeps only the newest entry per device and removes the rest automatically (also cleaning up existing duplicates).
+- **Fix: Remove didn't work.** It asked "are you sure?" with a pop-up that doesn't reliably appear inside the app. Remove (and Block in Settings) now asks by changing the button to "Press again to remove"; press it a second time within 4 seconds.
+- **Fix: several "New tablet or phone" cards for one tablet.** When Moonlight retries, only its newest pairing request is kept; older ones from the same device are cancelled.
+- **Clear steps for "not authorized (401)" in Moonlight:** this happens when Moonlight still remembers a pairing this PC no longer has. In Moonlight, long-press the PC → **Delete PC**, wait for it to reappear, tap it and pair again with the PIN.
+
 - **Tablets and phones are found for real:** no more ready-made "Moonlight tablet" card. bekdesk now listens for Moonlight in the background (it can't show your screen until you pick Extend or Duplicate). When a tablet or phone taps this computer in Moonlight, a **New tablet or phone** card appears with its address: type the PIN it shows, give it a name, and press **Pair**. Pairing requests also show up when the card already says paired.
 - **Name your devices:** the name you type is what bekdesk shows everywhere. Android doesn't tell other devices its name, so bekdesk asks.
 - **Remove a paired device** from its card. If you removed this computer in Moonlight, remove the device here too and pair again.

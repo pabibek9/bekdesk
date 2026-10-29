@@ -128,7 +128,7 @@ function entities() {
   // Moonlight on Android streams 720p unless told otherwise, and only the device can change that.
   const sharp = `<div class="hint">For a sharp picture: in Moonlight open <b>Settings</b>, set <b>Video resolution</b> to <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""} move <b>Video bitrate</b> to about 40 Mbps, and set <b>Frame rate</b> to 90 on a 120 Hz screen (60 on a 60 Hz one).</div>`;
   const list = paired.map((d) => `<div class="mlrow"><span class="gi">${ICON.tablet}</span><b>${esc(d.name || "Unnamed device")}</b><button class="link" data-act="forget" data-uuid="${esc(d.uuid)}">Remove</button></div>`).join("")
-    + (paired.length ? `<div class="hint">Removed this computer in Moonlight? Press Remove here too, then tap <b>${esc(host)}</b> in Moonlight to pair again.</div>` : "");
+    + (paired.length ? `<div class="hint">Moonlight says <b>not authorized (401)</b>, or you removed it here? In Moonlight long-press <b>${esc(host)}</b> → <b>Delete PC</b>, wait for it to reappear, tap it and pair again with the PIN.</div>` : "");
   if (t !== "off") {
     if (!ts.running) pill = ["wait", "Starting…"];
     else if (ts.streaming) pill = ["live", `Connected · ${LABEL[t]}`];
@@ -246,11 +246,21 @@ $("#scan").addEventListener("click", () => scan(true));
 // Check for devices when bekdesk is opened or brought back, not constantly in the background.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) scan(false); });
 window.addEventListener("focus", () => scan(false));
+// Two-step confirm inside the button: browser confirm() pop-ups don't reliably appear in the app window.
+function armed(b, text) {
+  if (b._armed) return true;
+  b._armed = true;
+  const was = b.textContent;
+  b.textContent = text;
+  b.classList.add("armed");
+  setTimeout(() => { b._armed = false; b.textContent = was; b.classList.remove("armed"); }, 4000);
+  return false;
+}
 async function pairAction(b) {
   const row = b.closest("[data-pair]");
   try {
     if (b.dataset.act === "forget") {
-      if (!confirm("Remove this device? It needs a new PIN to connect again.")) return;
+      if (!armed(b, "Press again to remove")) return;
       await call("tablet_forget", { uuid: b.dataset.uuid });
       toast("Removed");
     } else if (b.dataset.act === "decline") {
@@ -549,7 +559,7 @@ $("#links").addEventListener("click", (e) => { const b = e.target.closest("[data
 $("#trusted").addEventListener("click", async (e) => {
   const pb = e.target.closest("[data-pair]"), bb = e.target.closest("[data-block]");
   if (pb) { toast("Waiting for the other computer to accept…"); await call("pair_device", { fp: pb.dataset.pair }); toast("Connected"); refresh(); return; }
-  if (bb && confirm("Block this device? It won't be able to connect until you unblock it.")) { await call("block_device", { fp: bb.dataset.block }); refresh(); return; }
+  if (bb && armed(bb, "Press again to block")) { await call("block_device", { fp: bb.dataset.block }); refresh(); return; }
   if (e.target.dataset.forget) { await call("forget", { fp: e.target.dataset.forget }); refresh(); }
 });
 $("#trusted").addEventListener("change", (e) => {
