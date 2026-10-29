@@ -68,6 +68,7 @@ fn save_layout(app: Core, layout: HashMap<String, Pos>) {
     let app = app.inner().clone();
     tauri::async_runtime::spawn(async move {
         let _ = modes::restart_deskflow_server(&app).await;
+        modes::reposition_virtual(&app).await;
     });
 }
 

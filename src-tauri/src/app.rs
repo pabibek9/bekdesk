@@ -371,6 +371,7 @@ impl App {
         json!({
             "me": {"fp": self.id.fp, "name": cfg.name, "os": Self::os(), "kind": crate::display::device_kind(), "monitors": *self.monitors.lock().unwrap(), "pos": cfg.layout.get(SELF), "port": self.port},
             "devices": devices,
+            "layout": cfg.layout,
             "requests": *self.requests.lock().unwrap(),
             "transfers": *self.transfers.lock().unwrap(),
             "blocked": cfg.blocked,

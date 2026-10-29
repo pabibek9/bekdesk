@@ -526,6 +526,27 @@ async fn attach_virtual(app: &App, key: &str, (w, h): (u32, u32), (x, y): (i32, 
     Ok(name)
 }
 
+/// Move the virtual monitor to where the Manage Screens layout now puts the device it extends to.
+pub async fn reposition_virtual(app: &Arc<App>) {
+    let (key, res) = {
+        let s = app.sessions.lock().unwrap();
+        if let Some((fp, _)) = s.iter().find(|(_, s)| s.origin && s.mode == Mode::Extend) {
+            (fp.clone(), app.peer(fp).and_then(|p| display::primary_size(&p.monitors)).unwrap_or((1920, 1080)))
+        } else if app.tablet_host.lock().unwrap().as_ref().is_some_and(|s| s.mode == Mode::Extend) {
+            ("tablet".to_string(), display::parse_res(&app.cfg.lock().unwrap().tablet_res).unwrap_or((1920, 1200)))
+        } else {
+            return;
+        }
+    };
+    let (x, y) = placement(app, &key, res);
+    let _ = tokio::task::spawn_blocking(move || {
+        let name = display::vdd_display()?;
+        // same fallback as attach_virtual: the driver only offers some sizes
+        display::set_mode(&name, res.0, res.1, x, y).or_else(|_| display::set_mode(&name, 1920, 1080, x, y)).ok()
+    })
+    .await;
+}
+
 fn detach_virtual() {
     if let Some(name) = display::vdd_display() {
         let _ = display::set_mode(&name, 0, 0, 0, 0);
