@@ -732,6 +732,19 @@ pub async fn supervise(app: Arc<App>) {
         if n % 8 == 0 {
             probe_peers(&app).await;
         }
+        // Computers added by address aren't found by mDNS; keep them connected (and re-find them after a restart).
+        if n % 15 == 1 {
+            let manual = app.cfg.lock().unwrap().manual.clone();
+            for host in manual {
+                let known = host.parse::<IpAddr>().is_ok_and(|ip| app.peers.lock().unwrap().values().any(|p| p.addrs.contains(&ip)));
+                if !known {
+                    let app = app.clone();
+                    tokio::spawn(async move {
+                        let _ = net::connect_address(&app, &host).await;
+                    });
+                }
+            }
+        }
         n = n.wrapping_add(1);
         tick(&app).await;
         if std::env::var_os("BEKDESK_DUMP").is_some() {

@@ -36,6 +36,8 @@ pub enum Req {
     Pair { name: String, os: String },
     Start { mode: Mode, pin: String, port: u16 },
     Stop,
+    /// Who are you? Same public facts mDNS advertises; lets a peer be added by address when discovery is blocked.
+    Hello,
     Tunnel,
     Clip { kind: String, len: u64 },
     Files { items: Vec<FileItem>, paste: bool },
@@ -47,6 +49,14 @@ pub struct FileItem {
     pub size: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Hello {
+    pub name: String,
+    pub os: String,
+    pub kind: String,
+    pub monitors: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Resp {
     pub ok: bool,
@@ -54,13 +64,15 @@ pub struct Resp {
     pub err: String,
     #[serde(default)]
     pub trusted: bool,
+    #[serde(default)]
+    pub info: Option<Hello>,
 }
 impl Resp {
     fn ok() -> Self {
         Resp { ok: true, ..Default::default() }
     }
     fn err(e: impl ToString) -> Self {
-        Resp { ok: false, err: e.to_string(), trusted: false }
+        Resp { ok: false, err: e.to_string(), ..Default::default() }
     }
 }
 
@@ -190,6 +202,7 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
             };
             write_msg(&mut s, &r).await
         }
+        Req::Hello => write_msg(&mut s, &Resp { ok: true, info: Some(app.hello()), ..Default::default() }).await,
         Req::Stop => {
             if app.knows(&fp) {
                 crate::modes::stop_local(&app, &fp, true);
@@ -229,7 +242,7 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
 
 async fn pair_incoming(app: &Arc<App>, fp: &str, name: &str, os: &str) -> Resp {
     if app.cfg.lock().unwrap().trusted.contains_key(fp) {
-        return Resp { ok: true, trusted: true, err: String::new() };
+        return Resp { ok: true, trusted: true, ..Default::default() };
     }
     if app.requests.lock().unwrap().iter().any(|r| r.fp == fp) {
         return Resp::err("a request is already waiting");
@@ -251,7 +264,7 @@ async fn pair_incoming(app: &Arc<App>, fp: &str, name: &str, os: &str) -> Resp {
         Ok(Ok(Decision::Always)) => {
             app.trust(fp, name, os, true);
             app.log(format!("trusted {name}"));
-            Resp { ok: true, trusted: true, err: String::new() }
+            Resp { ok: true, trusted: true, ..Default::default() }
         }
         Ok(Ok(Decision::Once)) => {
             app.trust(fp, name, os, false);
@@ -298,6 +311,57 @@ pub async fn request(app: &App, fp: &str, req: &Req) -> Result<(Stream, IpAddr)>
         bail!("{}", r.err);
     }
     Ok((s, ip))
+}
+
+/// This computer's LAN address (the interface a route to the network would use), for "your address".
+pub fn local_ip() -> Option<IpAddr> {
+    let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    s.connect("192.0.2.1:9").ok()?; // no packet is sent; this only picks the outgoing interface
+    s.local_addr().ok().map(|a| a.ip()).filter(|ip| !ip.is_unspecified())
+}
+
+/// Add a computer by address (IP or name, optionally `:port`) when mDNS can't see it, e.g. on a
+/// Wi-Fi that isolates devices or across subnets. Returns its fingerprint; it then behaves like a discovered peer.
+pub async fn connect_address(app: &Arc<App>, host: &str) -> Result<String> {
+    let host = host.trim();
+    if host.is_empty() || host.len() > 253 {
+        bail!("type the other computer's address, e.g. 192.168.1.23");
+    }
+    let target = if host.parse::<SocketAddr>().is_ok() || host.rsplit_once(':').is_some_and(|(_, p)| p.parse::<u16>().is_ok()) { host.to_string() } else { format!("{host}:{PORT}") };
+    let addr = tokio::net::lookup_host(&target).await.with_context(|| format!("cannot find {host}"))?.min_by_key(|a| a.is_ipv6()).with_context(|| format!("cannot find {host}"))?;
+    let tcp = timeout(Duration::from_secs(5), TcpStream::connect(addr)).await.map_err(|_| anyhow::anyhow!("{host} did not answer. Is bekdesk open there, on the same network?"))??;
+    tcp.set_nodelay(true)?;
+    let tls = timeout(Duration::from_secs(10), app.tls.connector.connect(ServerName::try_from("bekdesk")?, tcp)).await??;
+    let fp = fingerprint(tls.get_ref().1.peer_certificates().and_then(|c| c.first()).context("no server certificate")?);
+    if fp == app.id.fp {
+        bail!("that is this computer");
+    }
+    let mut s = BufReader::new(tls);
+    write_msg(&mut s, &Req::Hello).await?;
+    let r: Resp = timeout(Duration::from_secs(10), read_msg(&mut s)).await.map_err(|_| anyhow::anyhow!("no answer; update bekdesk on the other computer"))?.context("the other computer needs a newer bekdesk")?;
+    let info = r.info.context("the other computer needs a newer bekdesk")?;
+    let peer = crate::app::Peer {
+        fp: fp.clone(),
+        name: info.name.chars().take(60).collect(),
+        os: info.os.chars().take(16).collect(),
+        addrs: vec![addr.ip()],
+        port: addr.port(),
+        monitors: info.monitors.chars().take(200).collect(),
+        kind: info.kind.chars().take(16).collect(),
+        fullname: format!("manual-{fp}"),
+    };
+    app.stale.lock().unwrap().remove(&fp);
+    if app.peers.lock().unwrap().insert(fp.clone(), peer.clone()).is_none() {
+        app.log(format!("added {} by address {}", peer.name, addr));
+    }
+    {
+        let mut c = app.cfg.lock().unwrap();
+        if !c.manual.iter().any(|m| m == host) {
+            c.manual.push(host.to_string());
+        }
+    }
+    app.save();
+    Ok(fp)
 }
 
 /// Ask an untrusted peer to approve us. Their answer (once/always) is mirrored locally.

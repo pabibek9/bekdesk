@@ -128,12 +128,27 @@ async fn send_files(app: Core<'_>, fp: String, paths: Vec<String>) -> Result<(),
 }
 
 #[tauri::command]
-fn set_name(app: Core, name: String) {
+fn set_name(app: Core, handle: tauri::AppHandle, name: String) {
     let name = name.trim().chars().take(60).collect::<String>();
     if !name.is_empty() {
         app.cfg.lock().unwrap().name = name;
         app.save();
+        readvertise(&handle, &app);
     }
+}
+
+/// Tell the network about a new name or monitor layout.
+fn readvertise(handle: &tauri::AppHandle, app: &App) {
+    if let Some(d) = handle.try_state::<mdns_sd::ServiceDaemon>() {
+        let _ = discovery::advertise(app, &d);
+    }
+}
+
+#[tauri::command]
+async fn connect_address(app: Core<'_>, host: String) -> Result<String, String> {
+    let app = app.inner().clone();
+    let fp = net::connect_address(&app, &host).await.map_err(|e| format!("{e:#}"))?;
+    Ok(app.peer_name(&fp))
 }
 
 #[tauri::command]
@@ -238,6 +253,8 @@ fn main() {
                     let mut m = c.monitors.lock().unwrap();
                     if *m != s {
                         *m = s;
+                        drop(m);
+                        readvertise(&handle, &c);
                     }
                 }
             });
@@ -263,7 +280,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

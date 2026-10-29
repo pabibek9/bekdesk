@@ -421,9 +421,53 @@ $("#blocked").addEventListener("click", async (e) => {
 });
 
 // ---------- loop ----------
+let renaming = false;
+function renderMe() {
+  const m = S.me, el = $("#me");
+  if (renaming) return;
+  setHTML(el, `<button class="mename" id="rename" title="Rename this computer"><b>${esc(m.name)}</b><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg></button>
+    <div class="meid">${osName(m.os)} · ID ${esc(m.id || "")}</div>`);
+  $("#addr-ip").textContent = m.ip || "Not connected to a network";
+  $("#addr-id").textContent = `${m.name} · ID ${m.id || ""}`;
+  $("#copy-addr").disabled = !m.ip;
+}
+$("#me").addEventListener("click", (e) => {
+  if (!e.target.closest("#rename") || renaming) return;
+  renaming = true;
+  const el = $("#me");
+  el._h = null;
+  el.innerHTML = `<input id="rename-in" maxlength="60" value="${esc(S.me.name)}" aria-label="Computer name" />
+    <div class="meid">Enter to save · Esc to cancel</div>`;
+  const i = $("#rename-in");
+  i.focus(); i.select();
+  const done = async (save) => {
+    if (!renaming) return;
+    renaming = false;
+    const v = i.value.trim();
+    i.blur();
+    if (save && v && v !== S.me.name) { await call("set_name", { name: v }); toast(`Renamed to ${v}`); }
+    refresh();
+  };
+  i.addEventListener("keydown", (k) => { if (k.key === "Enter") done(true); if (k.key === "Escape") done(false); });
+  i.addEventListener("blur", () => done(true));
+});
+$("#copy-addr").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(S.me.ip); toast(`Copied ${S.me.ip}`); } catch (_) { toast(`Your address is ${S.me.ip}`); }
+});
+$("#connect-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const i = $("#connect-host"), b = $("#connect-btn");
+  if (!i.value.trim()) return;
+  b.disabled = true; b.textContent = "Connecting…";
+  try { const name = await call("connect_address", { host: i.value }); toast(`Found ${name}`); i.value = ""; openFp = null; }
+  catch (_) {}
+  b.disabled = false; b.textContent = "Connect";
+  refresh();
+});
+
 function render() {
   if (!S) return;
-  $("#me").innerHTML = `<b>${esc(S.me.name)}</b>${osName(S.me.os)} · ${esc(S.me.fp.slice(0, 8))}`;
+  renderMe();
   const v = document.querySelector(".view.on").id;
   if (v === "devices") renderDevices();
   if (v === "workspace") renderWorkspace();

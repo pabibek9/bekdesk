@@ -8,6 +8,8 @@
 - **Tablet connection is tracked:** the card shows Waiting for the tablet, Paired, or Connected, with the setup steps and a PIN box that pairs by itself after 4 digits.
 - **Clicks no longer get lost:** the window used to redraw every second, which could swallow a click mid-press. Screens now update in place, with animations.
 - **Manage Screens:** the virtual monitor no longer shows up as an extra screen of this PC (it was the "third screen"); the monitor list stays live when screens change; names and status sit under each device without overlapping; every screen has a number and **Identify screens** flashes that number on the real screens. Moving a device while Extend is on moves the virtual monitor to match.
+- **Your address, like a remote-desktop ID:** Nearby Devices shows this computer's address and a 9-digit ID with a Copy button. If another computer doesn't show up (Wi-Fi that isolates devices, another subnet), type its address under **Connect by address**; it is remembered and reconnected automatically.
+- **Rename this computer** by clicking its name at the bottom of the sidebar; other computers see the new name immediately.
 - **Everything bekdesk needs downloads by itself** a few seconds after it starts (progress at the top of Nearby Devices), and retries if you were offline, instead of waiting for the first connection.
 
 ### Still preview

@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 pub const SERVICE: &str = "_bekdesk._tcp.local.";
 
-pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
-    let mdns = ServiceDaemon::new()?;
+/// (Re-)register this computer's advert; call again after the name or monitors change.
+pub fn advertise(app: &App, mdns: &ServiceDaemon) -> Result<()> {
     let short = &app.id.fp[..16];
     let mut props = HashMap::new();
     props.insert("fp".to_string(), app.id.fp.clone());
@@ -20,6 +20,12 @@ pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
     props.insert("mon".to_string(), app.monitors.lock().unwrap().chars().take(200).collect());
     let info = ServiceInfo::new(SERVICE, short, &format!("bk-{short}.local."), "", app.port, props)?.enable_addr_auto();
     mdns.register(info)?;
+    Ok(())
+}
+
+pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
+    let mdns = ServiceDaemon::new()?;
+    advertise(&app, &mdns)?;
 
     let rx = mdns.browse(SERVICE)?;
     std::thread::spawn(move || {

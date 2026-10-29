@@ -90,3 +90,18 @@ async fn pairing_permissions_and_files() {
     assert!(net::pair(&c, &b.id.fp).await.is_err());
     assert!(b.requests.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn connect_by_address_learns_the_peer() {
+    let (a, _da) = node("Alpha").await;
+    let (b, _db) = node("Beta").await;
+    let host = format!("127.0.0.1:{}", b.port);
+    let fp = net::connect_address(&a, &host).await.unwrap();
+    assert_eq!(fp, b.id.fp);
+    let p = a.peer(&fp).unwrap();
+    assert_eq!((p.name.as_str(), p.port), ("Beta", b.port));
+    // Not trusted yet: adding by address grants nothing.
+    assert!(!a.knows(&fp));
+    assert!(net::connect_address(&a, "").await.is_err());
+    assert!(net::connect_address(&a, &format!("127.0.0.1:{}", a.port)).await.unwrap_err().to_string().contains("this computer"));
+}

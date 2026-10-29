@@ -70,6 +70,8 @@ pub struct Config {
     /// Host mode offered to Moonlight receivers that don't run bekdesk (Android tablets).
     pub tablet: Mode,
     pub tablet_res: String,
+    /// Addresses added by hand ("Connect by address"); re-dialled when the device isn't found by discovery.
+    pub manual: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -319,6 +321,16 @@ impl App {
         }
     }
 
+    pub fn hello(&self) -> crate::net::Hello {
+        crate::net::Hello { name: self.name(), os: Self::os().into(), kind: crate::display::device_kind().into(), monitors: self.monitors.lock().unwrap().chars().take(200).collect() }
+    }
+
+    /// Short, easy-to-read number for this computer, derived from its identity (like a remote-desktop ID).
+    pub fn friendly_id(fp: &str) -> String {
+        let n = u64::from_str_radix(fp.get(..15).unwrap_or("0"), 16).unwrap_or(0) % 1_000_000_000;
+        format!("{:03} {:03} {:03}", n / 1_000_000, n / 1_000 % 1_000, n % 1_000)
+    }
+
     pub fn snapshot(&self) -> Value {
         let cfg = self.cfg.lock().unwrap().clone();
         let peers = self.peers.lock().unwrap().clone();
@@ -371,7 +383,7 @@ impl App {
             .collect();
         let tablet_state = crate::modes::stream_state(self, "tablet");
         json!({
-            "me": {"fp": self.id.fp, "name": cfg.name, "os": Self::os(), "kind": crate::display::device_kind(), "monitors": *self.monitors.lock().unwrap(), "pos": cfg.layout.get(SELF), "port": self.port},
+            "me": {"fp": self.id.fp, "name": cfg.name, "os": Self::os(), "kind": crate::display::device_kind(), "monitors": *self.monitors.lock().unwrap(), "pos": cfg.layout.get(SELF), "port": self.port, "ip": crate::net::local_ip().map(|i| i.to_string()), "id": Self::friendly_id(&self.id.fp)},
             "devices": devices,
             "requests": *self.requests.lock().unwrap(),
             "transfers": *self.transfers.lock().unwrap(),
@@ -385,5 +397,18 @@ impl App {
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),
             "engines": crate::engines::installed(self),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn friendly_id_is_nine_digits() {
+        let id = App::friendly_id(&"ab".repeat(32));
+        assert_eq!(id.len(), 11);
+        assert!(id.chars().all(|c| c.is_ascii_digit() || c == ' '));
+        assert_eq!(id, App::friendly_id(&"ab".repeat(32)));
     }
 }

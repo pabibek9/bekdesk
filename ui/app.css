@@ -154,3 +154,16 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink3); flex: none; }
 .dot.on { background: var(--ok); } .dot.live { background: var(--accent); }
+
+.mename { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; padding: 2px 4px; margin: 0 -4px; border-radius: 6px; color: var(--ink2); }
+.mename:hover { background: var(--hover); }
+.mename b { display: block; color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mename svg { width: 13px; height: 13px; stroke: var(--ink3); fill: none; stroke-width: 1.8; flex: none; opacity: 0; transition: opacity .15s; }
+.mename:hover svg { opacity: 1; }
+.me input { width: 100%; padding: 5px 8px; font-size: 13px; }
+.meid { padding-left: 0; }
+.addr { display: grid; grid-template-columns: 1fr auto; gap: 14px 16px; align-items: center; margin-bottom: 14px; }
+.addr-ip { font: 650 26px/1.15 ui-monospace, "Cascadia Mono", Menlo, monospace; letter-spacing: .01em; user-select: text; }
+.addr-connect { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 12px; }
+.addr-connect .pinrow { margin-top: 8px; }
+.addr-connect input { width: 240px; text-align: left; font: inherit; letter-spacing: 0; }

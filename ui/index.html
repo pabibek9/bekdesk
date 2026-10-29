@@ -19,6 +19,18 @@
   <main>
     <section id="devices" class="view on">
       <header><h1>Nearby Devices</h1><p class="sub">Your other computers show up here when bekdesk is open on them and they are on the same Wi-Fi or network.</p></header>
+      <div class="card addr">
+        <div class="addr-me">
+          <div class="small">Your address</div>
+          <div class="addr-ip" id="addr-ip">…</div>
+          <div class="small" id="addr-id"></div>
+        </div>
+        <div class="addr-act"><button class="btn" id="copy-addr">Copy address</button></div>
+        <form class="addr-connect" id="connect-form" autocomplete="off">
+          <div class="small">Can't see a computer below? Type the address shown on it.</div>
+          <div class="pinrow"><input id="connect-host" placeholder="e.g. 192.168.1.23" spellcheck="false" /><button class="btn primary" id="connect-btn" type="submit">Connect</button></div>
+        </form>
+      </div>
       <div id="components" class="components hidden"><span></span><div class="bar"><i></i></div></div>
       <div id="empty" class="card start hidden">
         <div class="n" style="font-weight:600">No other computers found yet</div>
