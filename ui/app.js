@@ -40,9 +40,15 @@ async function call(cmd, args) {
 }
 
 // ---------- navigation ----------
+function moveInd() {
+  const b = document.querySelector(".nav button.on"), ind = $("#nav-ind");
+  if (b && ind) { ind.style.top = b.offsetTop + "px"; ind.style.height = b.offsetHeight + "px"; }
+}
+requestAnimationFrame(moveInd);
 document.querySelectorAll(".nav button").forEach((b) =>
   b.addEventListener("click", () => {
     document.querySelectorAll(".nav button").forEach((x) => x.classList.toggle("on", x === b));
+    moveInd();
     document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.view));
     render();
   })
@@ -72,6 +78,12 @@ const reconnectBtn = (fp) => `<div class="acts1"><button class="btn" data-reconn
 // Sound plays on this computer only, unless the user also wants it on the device showing the screen.
 const soundToggle = (key, name) => `<label class="snd"><input type="checkbox" data-sound="${esc(key)}" ${(S.sound || {})[key] ? "checked" : ""}/> Also play sound on ${esc(name)}</label>`;
 let addTablet = false;
+// Pointer speed while the mouse is on this device (Windows only; bekdesk switches it as the mouse crosses over).
+const speedSlider = (key, name) => {
+  if (S.me.os !== "windows") return "";
+  const v = (S.pointer || {})[key] || 1;
+  return `<label class="spd">Mouse speed on ${esc(name)}<input type="range" min="0.5" max="3" step="0.25" value="${v}" data-speed="${esc(key)}" /><b>${v.toFixed(2).replace(/0$/, "")}×</b></label>`;
+};
 
 // One entry per thing you can connect: each nearby computer, plus the Android tablet.
 function entities() {
@@ -95,6 +107,7 @@ function entities() {
         ? `<div class="hint">First connection asks for approval on ${esc(d.name)}. Check that both screens show code <b>${esc(d.code)}</b>.</div>`
         : d.online ? (mode === "input" ? `<div class="hint">Move your mouse past the edge where you put ${esc(d.name)} in Manage Screens. Your keyboard always types on the computer the mouse is on.</div>` : "")
           + `<div class="hint">Drop files on this card to send them to ${esc(d.name)}. Copied files and text sync while Share Input is on.</div>`
+          + (mode === "extend" || mode === "input" ? speedSlider(d.fp, d.name) : "")
           + (mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "")
           + (mode !== "off" && !busy[d.fp] ? reconnectBtn(d.fp) : "") : "",
     });
@@ -117,6 +130,7 @@ function entities() {
     extra = ts.streaming ? `<div class="hint ok">Streaming to ${esc(dn)} now. It switches off by itself when ${esc(dn)} disconnects.</div>`
       : ts.paired ? `<div class="hint">Paired. In Moonlight tap <b>${esc(S.me.name)}</b>, then <b>Desktop</b>.</div>${sharp}`
       : steps + pin + sharp;
+    if (t === "extend") extra += speedSlider("tablet", dn);
     extra += soundToggle("tablet", dn);
     if (!busy.tablet) extra += reconnectBtn("tablet");
     if (t === "extend") extra += `<label class="resrow">Screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>`;
@@ -162,7 +176,10 @@ function renderDevices() {
     const pill = el.querySelector(".pill");
     pill.className = "pill " + e.pill[0];
     pill.querySelector("b").textContent = e.pill[1];
-    el.classList.toggle("live", e.pill[0] === "live");
+    const live = e.pill[0] === "live";
+    if (live && el._live === false) { el.classList.remove("joined"); void el.offsetWidth; el.classList.add("joined"); }
+    el._live = live;
+    el.classList.toggle("live", live);
     el.querySelectorAll("[data-mode]").forEach((b) => {
       const m = b.dataset.mode, noExt = m === "extend" && !e.extendOk;
       b.classList.toggle("on", e.mode === m);
@@ -231,9 +248,16 @@ async function submitPin() {
   refresh();
 }
 $("#device-list").addEventListener("input", (e) => {
+  if (e.target.dataset.speed) { e.target.nextElementSibling.textContent = (+e.target.value).toFixed(2).replace(/0$/, "") + "×"; return; }
   if (e.target.id === "tab-pin") { e.target.value = e.target.value.replace(/\D/g, ""); if (e.target.value.length === 4) submitPin(); }
 });
 $("#device-list").addEventListener("change", async (e) => {
+  if (e.target.dataset.speed) {
+    const key = e.target.dataset.speed, factor = +e.target.value;
+    S.pointer = { ...(S.pointer || {}), [key]: factor };
+    call("set_pointer", { key, factor });
+    return;
+  }
   if (e.target.dataset.sound) {
     const key = e.target.dataset.sound, on = e.target.checked;
     await call("set_sound", { key, on });
@@ -581,4 +605,4 @@ async function refresh() {
 invoke("autostart", {}).then((on) => ($("#autostart").checked = on)).catch(() => {});
 refresh();
 setInterval(refresh, 1000);
-window.addEventListener("resize", () => render());
+window.addEventListener("resize", () => { render(); moveInd(); });

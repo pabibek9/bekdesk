@@ -96,6 +96,13 @@ fn open_display_settings() {
     let _ = std::process::Command::new(cmd).arg(arg).spawn();
 }
 
+/// Pointer speed multiplier while the mouse is on `key` (a peer or "tablet"); applies immediately.
+#[tauri::command]
+fn set_pointer(app: Core, key: String, factor: f64) {
+    app.cfg.lock().unwrap().pointer.insert(key, factor.clamp(0.25, 4.0));
+    app.save();
+}
+
 /// Whether `key` (a peer or "tablet") also plays this computer's sound. Takes effect on the next connect.
 #[tauri::command]
 fn set_sound(app: Core, key: String, on: bool) {
@@ -344,6 +351,8 @@ fn main() {
             clip::start(core.clone(), rt);
             tauri::async_runtime::spawn(modes::supervise(core.clone()));
             tauri::async_runtime::spawn(bekdesk_core::engines::prefetch(core.clone()));
+            let c = core.clone();
+            std::thread::spawn(move || modes::pointer_watch(c));
             let (handle, c) = (app.handle().clone(), core.clone());
             tauri::async_runtime::spawn(async move {
                 loop {
@@ -376,7 +385,10 @@ fn main() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| match e.id.as_ref() {
                     "open" => show(app),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        modes::restore_pointer();
+                        app.exit(0)
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|t, e| {
@@ -387,7 +399,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

@@ -74,6 +74,8 @@ pub struct Config {
     pub manual: Vec<String>,
     /// Devices (peer fingerprint or "tablet") that also play this computer's sound; off by default.
     pub sound: HashMap<String, bool>,
+    /// Pointer speed multiplier while the mouse is on a device (peer fingerprint or "tablet"); 1.0 when unset.
+    pub pointer: HashMap<String, f64>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -427,6 +429,7 @@ impl App {
             "tablet_note": notes.get("tablet"),
             "tablet_state": {"running": self.tablet_host.lock().unwrap().is_some(), "paired": tablet_state.0.is_some(), "name": tablet_state.0, "streaming": tablet_state.1},
             "sound": cfg.sound,
+            "pointer": cfg.pointer,
             "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),
             "engines": crate::engines::installed(self),

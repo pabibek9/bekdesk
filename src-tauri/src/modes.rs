@@ -703,6 +703,96 @@ async fn ensure_tablet_host(app: &Arc<App>) {
     }
 }
 
+// ---------- pointer speed ----------
+
+// Pointer speed the user had before bekdesk changed it (0 = bekdesk hasn't changed it).
+static POINTER_BASE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Windows has one pointer speed for the whole computer. A tablet or another laptop shows a different number of
+/// pixels per centimetre, so the same hand movement feels slower or faster there. While the pointer is on such a
+/// device (the virtual screen for Extend, or another computer for Share Input), use that device's speed setting.
+pub fn pointer_watch(app: Arc<App>) {
+    if display::mouse_speed().is_none() {
+        return; // not Windows
+    }
+    let (mut vdd, mut vdd_at) = (None, Instant::now() - Duration::from_secs(5));
+    let (mut remote, mut log_len, mut n) = (None::<String>, 0u64, 0u32);
+    let mut applied = None;
+    loop {
+        std::thread::sleep(Duration::from_millis(40));
+        n = n.wrapping_add(1);
+        if vdd_at.elapsed() > Duration::from_secs(1) {
+            vdd = display::vdd_rect();
+            vdd_at = Instant::now();
+        }
+        if n % 4 == 0 {
+            remote = deskflow_target(&app, &mut log_len, remote);
+        }
+        let on_vdd = || {
+            let ((x, y), (vx, vy, vw, vh)) = (display::cursor_pos()?, vdd?);
+            (x >= vx && y >= vy && x < vx + vw as i32 && y < vy + vh as i32).then(|| extend_key(&app)).flatten()
+        };
+        let key = remote.clone().or_else(on_vdd);
+        let factor = key.and_then(|k| app.cfg.lock().unwrap().pointer.get(&k).copied()).unwrap_or(1.0);
+        let want = ((factor - 1.0).abs() > 0.01).then_some(factor);
+        if want != applied {
+            match want {
+                Some(f) => {
+                    if POINTER_BASE.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+                        POINTER_BASE.store(display::mouse_speed().unwrap_or(10), std::sync::atomic::Ordering::Relaxed);
+                    }
+                    display::set_mouse_speed(display::speed_for(POINTER_BASE.load(std::sync::atomic::Ordering::Relaxed), f));
+                }
+                None => restore_pointer(),
+            }
+            applied = want;
+        }
+    }
+}
+
+/// Put back the user's own pointer speed (when the pointer comes home, and when bekdesk quits).
+pub fn restore_pointer() {
+    let base = POINTER_BASE.swap(0, std::sync::atomic::Ordering::Relaxed);
+    if base != 0 {
+        display::set_mouse_speed(base);
+    }
+}
+
+/// The device the virtual screen belongs to ("tablet" or a peer fingerprint).
+fn extend_key(app: &App) -> Option<String> {
+    if app.tablet_host.lock().unwrap().as_ref().is_some_and(|s| s.mode == Mode::Extend) {
+        return Some("tablet".into());
+    }
+    app.sessions.lock().unwrap().iter().find(|(_, s)| s.origin && s.mode == Mode::Extend).map(|(fp, _)| fp.clone())
+}
+
+/// Which peer the Deskflow server says the pointer is on now (None = this computer). Re-reads the log only when it grew.
+fn deskflow_target(app: &App, log_len: &mut u64, current: Option<String>) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let peers: Vec<String> = app.sessions.lock().unwrap().iter().filter(|(_, s)| s.origin && s.mode == Mode::Input).map(|(fp, _)| fp.clone()).collect();
+    if peers.is_empty() {
+        return None;
+    }
+    let mut f = std::fs::File::open(app.dir.join("logs").join("deskflow-server.log")).ok()?;
+    let len = f.metadata().ok()?.len();
+    if len == *log_len {
+        return current;
+    }
+    *log_len = len;
+    f.seek(SeekFrom::Start(len.saturating_sub(8 * 1024))).ok()?;
+    let mut b = vec![];
+    f.read_to_end(&mut b).ok()?;
+    let to = switched_to(&String::from_utf8_lossy(&b))?.to_string();
+    peers.into_iter().find(|fp| App::screen_name(fp) == to)
+}
+
+/// Target of the last `switch from "A" to "B" at x,y` line in a Deskflow server log.
+fn switched_to(log: &str) -> Option<&str> {
+    let line = &log[log.rfind("switch from \"")?..];
+    let rest = &line[line.find("\" to \"")? + 6..];
+    rest.get(..rest.find('"')?)
+}
+
 // ---------- supervision ----------
 
 fn check(app: &Arc<App>, fp: &str, s: &mut Session) -> Option<bool> {
@@ -875,6 +965,14 @@ pub async fn supervise(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_last_deskflow_switch() {
+        let log = "[x] INFO: switch from \"me\" to \"bk-abc\" at 1919,500\n[y] INFO: switch from \"bk-abc\" to \"me\" at 0,500\n";
+        assert_eq!(switched_to(log), Some("me"));
+        assert_eq!(switched_to(&log[..log.find("[y]").unwrap()]), Some("bk-abc"));
+        assert_eq!(switched_to("nothing"), None);
+    }
 
     #[test]
     fn edges_cross_where_screens_overlap() {

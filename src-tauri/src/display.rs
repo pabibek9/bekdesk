@@ -42,6 +42,25 @@ mod win {
         }
     }
 
+    pub fn cursor_pos() -> Option<(i32, i32)> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut p: windows_sys::Win32::Foundation::POINT = unsafe { zeroed() };
+        (unsafe { GetCursorPos(&mut p) } != 0).then_some((p.x, p.y))
+    }
+
+    /// Windows pointer speed, 1..=20 (10 = no scaling).
+    pub fn mouse_speed() -> Option<u32> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETMOUSESPEED};
+        let mut v: u32 = 0;
+        (unsafe { SystemParametersInfoW(SPI_GETMOUSESPEED, 0, &mut v as *mut u32 as *mut _, 0) } != 0).then_some(v)
+    }
+
+    /// Sets the pointer speed for this sign-in only (not saved), so a crash can't leave it changed for good.
+    pub fn set_mouse_speed(v: u32) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_SETMOUSESPEED};
+        unsafe { SystemParametersInfoW(SPI_SETMOUSESPEED, 0, v as usize as *mut _, 0) };
+    }
+
     /// `\\.\DISPLAYn` names and current (x, y) of every display attached to the desktop.
     fn attached() -> Vec<(String, i32, i32, bool)> {
         let mut out = vec![];
@@ -242,12 +261,22 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{display_at, ensure_installed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{cursor_pos, display_at, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
     None
 }
+#[cfg(not(windows))]
+pub fn cursor_pos() -> Option<(i32, i32)> {
+    None
+}
+#[cfg(not(windows))]
+pub fn mouse_speed() -> Option<u32> {
+    None
+}
+#[cfg(not(windows))]
+pub fn set_mouse_speed(_: u32) {}
 #[cfg(not(windows))]
 pub fn primary_name() -> Option<String> {
     None
@@ -345,6 +374,14 @@ pub fn device_id_from_log(log: &str, display_name: &str) -> Option<String> {
     list.iter().find(|d| d["display_name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(display_name)))?["device_id"].as_str().map(String::from)
 }
 
+/// Windows pointer-speed setting (1..=20) whose multiplier is closest to `factor` times that of `base`.
+/// Multipliers per setting as Windows applies them (without "Enhance pointer precision").
+pub fn speed_for(base: u32, factor: f64) -> u32 {
+    const MULT: [f64; 20] = [0.03125, 0.0625, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5];
+    let want = MULT[base.clamp(1, 20) as usize - 1] * factor;
+    (1..=20u32).min_by(|a, b| (MULT[*a as usize - 1] - want).abs().total_cmp(&(MULT[*b as usize - 1] - want).abs())).unwrap()
+}
+
 /// Parse "WxH" with sane bounds.
 pub fn parse_res(s: &str) -> Option<(u32, u32)> {
     let (w, h) = s.trim().split_once(['x', 'X'])?;
@@ -361,6 +398,16 @@ pub fn primary_size(monitors: &str) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pointer_speed_scales() {
+        assert_eq!(speed_for(10, 1.0), 10);
+        assert_eq!(speed_for(10, 2.0), 14);
+        assert_eq!(speed_for(10, 0.5), 6);
+        assert_eq!(speed_for(14, 1.5), 18);
+        assert_eq!(speed_for(20, 3.0), 20);
+        assert_eq!(speed_for(1, 0.1), 1);
+    }
+
     #[test]
     fn adds_missing_modes_once() {
         let xml = "<resolutions>\r\n        <resolution>\r\n            <width>1920</width>\r\n            <height>1080</height>\r\n        </resolution>\r\n    </resolutions>";
