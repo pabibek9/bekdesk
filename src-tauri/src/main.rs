@@ -12,6 +12,55 @@ use tauri_plugin_autostart::ManagerExt;
 
 type Core<'a> = State<'a, Arc<App>>;
 
+/// Physical monitors (x, y, w, h), main first, without bekdesk's own virtual monitor.
+fn real_monitors(app: &tauri::AppHandle) -> Vec<(i32, i32, u32, u32)> {
+    let virt = display::vdd_rect();
+    let mut v: Vec<_> = app
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| (m.position().x, m.position().y, m.size().width, m.size().height))
+        .filter(|m| Some(*m) != virt)
+        .collect();
+    if let Some(p) = app.primary_monitor().ok().flatten().map(|m| (m.position().x, m.position().y)) {
+        v.sort_by_key(|m| (m.0, m.1) != p);
+    }
+    v
+}
+
+fn monitor_string(app: &tauri::AppHandle) -> String {
+    real_monitors(app).iter().map(|(x, y, w, h)| format!("{x},{y},{w},{h}")).collect::<Vec<_>>().join(";")
+}
+
+/// Flash each real screen's number for a moment, like Windows' "Identify".
+#[tauri::command]
+async fn identify_screens(app: tauri::AppHandle) -> Result<(), String> {
+    for (i, (x, y, mw, mh)) in real_monitors(&app).into_iter().enumerate() {
+        let label = format!("identify{i}");
+        if app.get_webview_window(&label).is_some() {
+            continue;
+        }
+        let w = WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(format!("identify.html?n={}", i + 1).into()))
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .focused(false)
+            .shadow(false)
+            .inner_size(240.0, 240.0)
+            .build()
+            .map_err(|e| e.to_string())?;
+        if let Ok(sz) = w.outer_size() {
+            let _ = w.set_position(tauri::PhysicalPosition::new(x + (mw as i32 - sz.width as i32) / 2, y + (mh as i32 - sz.height as i32) / 2));
+        }
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+            let _ = w.close();
+        });
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn snapshot(app: Core) -> serde_json::Value {
     let mut v = app.snapshot();
@@ -156,18 +205,7 @@ fn main() {
             let host = hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "Computer".into());
             let core = App::new(dir, port, &host)?;
             if let Some(w) = app.get_webview_window("main") {
-                let mons: Vec<String> = w
-                    .available_monitors()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|m| format!("{},{},{},{}", m.position().x, m.position().y, m.size().width, m.size().height))
-                    .collect();
-                let primary = w.primary_monitor().ok().flatten().map(|m| format!("{},{}", m.position().x, m.position().y));
-                let mut sorted = mons.clone();
-                if let Some(p) = primary {
-                    sorted.sort_by_key(|m| !m.starts_with(&format!("{p},")));
-                }
-                *core.monitors.lock().unwrap() = sorted.join(";");
+                *core.monitors.lock().unwrap() = monitor_string(app.handle());
                 if args.iter().any(|a| a == "--background") {
                     let _ = w.destroy();
                 }
@@ -190,6 +228,19 @@ fn main() {
             }
             clip::start(core.clone(), rt);
             tauri::async_runtime::spawn(modes::supervise(core.clone()));
+            tauri::async_runtime::spawn(bekdesk_core::engines::prefetch(core.clone()));
+            // Monitors change at runtime (plug/unplug, the virtual monitor); keep the list live.
+            let (handle, c) = (app.handle().clone(), core.clone());
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    let s = monitor_string(&handle);
+                    let mut m = c.monitors.lock().unwrap();
+                    if *m != s {
+                        *m = s;
+                    }
+                }
+            });
 
             let open = MenuItem::with_id(app, "open", "Open bekdesk", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -212,7 +263,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

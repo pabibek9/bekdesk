@@ -332,7 +332,8 @@ impl App {
             .iter()
             .map(|(fp, s)| {
                 let up = s.since.elapsed().map(|d| d.as_secs()).unwrap_or(0);
-                (fp.clone(), json!({"mode": s.mode, "origin": s.origin, "status": s.status, "ip": s.peer_ip, "uptime": up}))
+                let (paired, streaming) = if s.origin && matches!(s.mode, Mode::Mirror | Mode::Extend) { crate::modes::stream_state(self, fp) } else { (false, false) };
+                (fp.clone(), json!({"mode": s.mode, "origin": s.origin, "status": s.status, "ip": s.peer_ip, "uptime": up, "paired": paired, "streaming": streaming}))
             })
             .collect();
         // Offline trusted devices stay listed so their saved mode is visible.
@@ -368,10 +369,10 @@ impl App {
                 })
             })
             .collect();
+        let tablet_state = crate::modes::stream_state(self, "tablet");
         json!({
             "me": {"fp": self.id.fp, "name": cfg.name, "os": Self::os(), "kind": crate::display::device_kind(), "monitors": *self.monitors.lock().unwrap(), "pos": cfg.layout.get(SELF), "port": self.port},
             "devices": devices,
-            "layout": cfg.layout,
             "requests": *self.requests.lock().unwrap(),
             "transfers": *self.transfers.lock().unwrap(),
             "blocked": cfg.blocked,
@@ -379,6 +380,8 @@ impl App {
             "tablet_res": cfg.tablet_res,
             "tablet_status": self.tablet_host.lock().unwrap().as_ref().map(|s| s.status.clone()),
             "tablet_note": notes.get("tablet"),
+            "tablet_state": {"running": self.tablet_host.lock().unwrap().is_some(), "paired": tablet_state.0, "streaming": tablet_state.1},
+            "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),
             "engines": crate::engines::installed(self),
         })

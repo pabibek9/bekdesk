@@ -18,7 +18,7 @@ Windows/macOS runners. No second physical computer, Mac or Android tablet has be
 | Text/image clipboard sync | Built | Via clipboard-rs; Deskflow's own clipboard is disabled to avoid fights. Rich text/HTML not synced. |
 | Share Input (Windows↔Windows, Windows↔macOS) | Built | Deskflow 1.27 config format verified against the real binary (server parses, listens on 127.0.0.1 only, client handshake starts). Full cross-machine control not yet tested. |
 | Workspace layout → screen edges | Built | Layout → Deskflow links unit-tested. |
-| Mirror Display (Windows/macOS host → Windows/macOS viewer) | Built | Sunshine config + credentials and Moonlight↔Sunshine PIN pairing automation **tested locally against the real binaries**; actual streaming between two machines not yet tested. |
+| Mirror Display (Windows/macOS host → Windows/macOS viewer) | Built | Sunshine config + credentials (Extend selects the virtual monitor by Sunshine device ID since 0.1.5) and Moonlight↔Sunshine PIN pairing automation **tested locally against the real binaries**; actual streaming between two machines not yet tested. |
 | Extend Display, Windows host | Built | Virtual Display Driver install (UAC) + attach/detach via Win32. Not yet run: the driver has not been installed on the test PC. One virtual monitor per host for now. |
 | Extend Display, macOS host | **Not available** | Needs a macOS virtual-display helper (CGVirtualDisplay). Mirror works from macOS hosts. |
 | Android tablet as Mirror receiver | Built | Via upstream Moonlight for Android + bekdesk's tablet PIN entry. Not tested on a tablet. |
@@ -27,6 +27,8 @@ Windows/macOS runners. No second physical computer, Mac or Android tablet has be
 | bekdesk app for Android / system-wide Android input sharing | **Not available** | Tablets don't appear under Nearby Devices; they use the Tablets & phones section. |
 | Simultaneous modes to different devices | Built | Separate session per device; separate Sunshine instance/ports per display target. Changing input targets restarts the Deskflow server (~1 s blip for other input targets). |
 | Reconnect after sleep / IP change | Built | Supervisor drops sessions of vanished peers and restores saved modes when they return. |
+| Tablet/receiver connection status (paired, connected) | Built | Read from Sunshine's state file and log; not yet seen on a real tablet. |
+| Engines download automatically at startup | Built | Background download with progress; retries when offline. |
 | Closing the Moonlight window ends that Mirror/Extend session | Built | Mode is set back to Off on the host. |
 | Start at login, tray icon, close-to-tray | Built | Tauri autostart plugin + tray. Closing the window destroys the webview: measured idle in tray ~40 MB working set, ~0.07% CPU (debug build, Windows 11). |
 | Builds on Windows and macOS | **Tested** | GitHub Actions: tests pass and installers build on windows-latest and macos-latest (universal). |

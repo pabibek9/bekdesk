@@ -19,13 +19,22 @@
   <main>
     <section id="devices" class="view on">
       <header><h1>Nearby Devices</h1><p class="sub">Your other computers show up here when bekdesk is open on them and they are on the same Wi-Fi or network.</p></header>
+      <div id="components" class="components hidden"><span></span><div class="bar"><i></i></div></div>
+      <div id="empty" class="card start hidden">
+        <div class="n" style="font-weight:600">No other computers found yet</div>
+        <ol>
+          <li>On your other PC or Mac, install bekdesk (same installer) and open it.</li>
+          <li>Make sure both are on the same Wi-Fi or network. If Windows asks, allow bekdesk on <b>private</b> networks.</li>
+          <li>It appears here within a few seconds. Choose <b>Share Input</b>, <b>Extend</b> or <b>Duplicate</b>.</li>
+        </ol>
+        <div class="small"></div>
+      </div>
       <div id="device-list" class="list"></div>
-      <div class="tablet card" id="tablet"></div>
     </section>
 
     <section id="workspace" class="view">
-      <header><h1>Manage Screens</h1><p class="sub">Drag the screens to match where they sit on your desk. When you share your mouse, the pointer moves to the other computer through the edges that touch.</p></header>
-      <div id="canvas" class="canvas"></div>
+      <header class="split"><div><h1>Manage Screens</h1><p class="sub">Drag each device to where it sits on your desk. A tablet you extend to appears as an extra monitor on the side you put it; with Share Input the pointer crosses the edges that touch.</p></div><button class="btn" id="identify" title="Show a big number on each of this computer's screens">Identify screens</button></header>
+      <div id="canvas" class="canvas"><div id="ws-hint" class="ws-hint hidden">Connect another computer or turn on the Android tablet under Nearby Devices and it appears here.</div></div>
     </section>
 
     <section id="activity" class="view">
@@ -46,7 +55,7 @@
       <h2>Blocked devices</h2><div id="blocked" class="list"></div>
       <h2>Engines</h2><div id="engines" class="list small"></div>
       <h2>About</h2>
-      <div class="card small">bekdesk 0.1.4 · GPL-3.0-or-later. Uses Deskflow, Sunshine, Moonlight and Virtual Display Driver, downloaded from their official releases on first use. See THIRD_PARTY.md.</div>
+      <div class="card small">bekdesk 0.1.5 · GPL-3.0-or-later. Uses Deskflow, Sunshine, Moonlight and Virtual Display Driver, downloaded from their official releases on first use. See THIRD_PARTY.md.</div>
     </section>
   </main>
 

@@ -453,6 +453,32 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     Ok((child, (exe, args, log), creds))
 }
 
+/// (paired, streaming) for the Sunshine instance run for `key`: paired once a Moonlight client has been
+/// accepted (state file), streaming while the last "CLIENT CONNECTED" in its log has no later "CLIENT DISCONNECTED".
+pub fn stream_state(app: &App, key: &str) -> (bool, bool) {
+    use std::io::{Read, Seek, SeekFrom};
+    let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
+    let paired = std::fs::read_to_string(dir.join("sunshine_state.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|v| v["root"]["named_devices"].as_array().is_some_and(|a| !a.is_empty()));
+    let streaming = std::fs::File::open(dir.join("sunshine.log"))
+        .ok()
+        .and_then(|mut f| {
+            let len = f.metadata().ok()?.len();
+            f.seek(SeekFrom::Start(len.saturating_sub(64 * 1024))).ok()?;
+            let mut b = vec![];
+            f.read_to_end(&mut b).ok()?;
+            Some(String::from_utf8_lossy(&b).into_owned())
+        })
+        .is_some_and(|t| streaming_in_log(&t));
+    (paired, streaming)
+}
+
+fn streaming_in_log(t: &str) -> bool {
+    t.rfind("CLIENT CONNECTED") > t.rfind("CLIENT DISCONNECTED")
+}
+
 /// Submit a PIN for a pairing request waiting in a local Sunshine instance (2026 API: GET lists
 /// pending requests, POST answers one by `pairing_id`). Prefers the request from `from`, else the only one.
 async fn submit_pin(port: u16, creds: &(String, String), pin: &str, name: &str, from: Option<IpAddr>) -> Result<bool> {
@@ -717,6 +743,14 @@ pub async fn supervise(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streaming_follows_last_event() {
+        assert!(!streaming_in_log("nothing"));
+        assert!(streaming_in_log("a CLIENT CONNECTED b"));
+        assert!(!streaming_in_log("CLIENT CONNECTED ... CLIENT DISCONNECTED"));
+        assert!(streaming_in_log("CLIENT CONNECTED CLIENT DISCONNECTED CLIENT CONNECTED"));
+    }
 
     #[test]
     fn links_follow_layout() {

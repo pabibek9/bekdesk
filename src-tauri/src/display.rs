@@ -42,6 +42,21 @@ mod win {
         }
     }
 
+    /// Current desktop rectangle (x, y, w, h) of the virtual monitor, if it is attached.
+    pub fn vdd_rect() -> Option<(i32, i32, u32, u32)> {
+        let name = vdd_display()?;
+        unsafe {
+            let mut dm: DEVMODEW = zeroed();
+            dm.dmSize = size_of::<DEVMODEW>() as u16;
+            let n = w(&name);
+            if EnumDisplaySettingsW(n.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) == 0 || dm.dmPelsWidth == 0 {
+                return None;
+            }
+            let p = dm.Anonymous1.Anonymous2.dmPosition;
+            Some((p.x, p.y, dm.dmPelsWidth, dm.dmPelsHeight))
+        }
+    }
+
     /// Attach (w,h > 0) or detach (w = h = 0) the virtual monitor at desktop position (x, y).
     pub fn set_mode(name: &str, width: u32, height: u32, x: i32, y: i32) -> Result<()> {
         unsafe {
@@ -134,10 +149,14 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{ensure_installed, install_elevated, set_mode, vdd_display};
+pub use win::{ensure_installed, install_elevated, set_mode, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
+    None
+}
+#[cfg(not(windows))]
+pub fn vdd_rect() -> Option<(i32, i32, u32, u32)> {
     None
 }
 #[cfg(not(windows))]

@@ -5,7 +5,7 @@ other computers show up under **Nearby Devices**, click one and choose:
 
 - **Share Input**: one keyboard and mouse across computers, with clipboard sync and file copy/paste.
 - **Extend**: the other computer's screen becomes an extra monitor for this one (Windows hosts for now).
-- **Mirror**: show this computer's main screen on the other device.
+- **Duplicate** (Mirror): show this computer's main screen on the other device.
 
 Each device has its own mode, and the modes run at the same time. No accounts, no cloud, no subscription.
 

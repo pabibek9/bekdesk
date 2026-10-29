@@ -26,8 +26,8 @@ All computers must be on the same network (same Wi-Fi/LAN, not a guest network t
    - **Always Allow** — remember this device; it reconnects automatically after sleep or restart.
    - **Allow Once** — until bekdesk restarts.
    - **Decline**, or **Block** to ignore it from now on.
-4. The first use of each mode downloads its engine (Deskflow ~18–29 MB, Sunshine ~40 MB,
-   Moonlight ~37–78 MB). Progress shows on the device card.
+4. bekdesk downloads the engines it needs (Deskflow ~18–29 MB, Sunshine ~40 MB, Moonlight ~37–78 MB)
+   by itself shortly after it starts; progress shows at the top of Nearby Devices.
 
 Revoke or limit a device any time in **Settings → Trusted devices** (control, clipboard, files, screen).
 

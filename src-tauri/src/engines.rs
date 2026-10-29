@@ -136,6 +136,33 @@ fn extract(file: &Path, dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Downloads every engine this OS can use in the background, so the first connection needs no wait.
+/// Progress shows under the "components" note; offline failures are retried every minute.
+pub async fn prefetch(app: std::sync::Arc<App>) {
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    loop {
+        let mut failed = None;
+        for name in ["deskflow", "sunshine", "moonlight", "vdd"] {
+            let Some(p) = pkg(name) else { continue };
+            if dir_for(&app, name, &p).join(".ok").exists() {
+                continue;
+            }
+            if let Err(e) = ensure(&app, name, "components").await {
+                app.log(format!("downloading {name}: {e:#}"));
+                failed = Some(name);
+            }
+        }
+        match failed {
+            None => {
+                app.note("components", "");
+                return;
+            }
+            Some(n) => app.note("components", format!("Couldn't download {n} (no internet?). Retrying…")),
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+    }
+}
+
 /// Spawn an engine process with output captured to the bekdesk log folder.
 pub fn spawn(app: &App, exe: &Path, args: &[String], log: &str) -> Result<tokio::process::Child> {
     let f = std::fs::File::create(app.dir.join("logs").join(log))?;
