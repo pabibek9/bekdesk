@@ -413,6 +413,12 @@ function renderActivity() {
   $("#log").textContent = S.log.map((l) => { const [ts, ...r] = l.split(" "); return new Date(+ts * 1000).toLocaleTimeString() + "  " + r.join(" "); }).join("\n");
 }
 
+$("#diag").addEventListener("click", async () => {
+  const text = await call("diagnostics");
+  try { await navigator.clipboard.writeText(text); toast("Diagnostics copied — paste them in your message"); }
+  catch (_) { toast("Couldn't copy; use Open logs instead"); }
+});
+
 // ---------- settings ----------
 function renderSettings() {
   if (document.activeElement !== $("#name")) $("#name").value = S.me.name;

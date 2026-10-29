@@ -354,22 +354,39 @@ fn server_config(app: &App) -> (String, String) {
     let layout = default_positions(app);
     let peers: Vec<String> = app.sessions.lock().unwrap().iter().filter(|(_, s)| s.origin && s.mode == Mode::Input).map(|(fp, _)| fp.clone()).collect();
     let me = device_box(&app.monitors.lock().unwrap(), layout.get(SELF).copied());
-    let mut screens = vec![(App::screen_name(&app.id.fp), me.x + me.w / 2.0, me.y + me.h / 2.0)];
+    let mut boxes = vec![(App::screen_name(&app.id.fp), me)];
     for fp in &peers {
-        let b = device_box(&app.peer(fp).map(|p| p.monitors).unwrap_or_default(), layout.get(fp).copied());
-        screens.push((App::screen_name(fp), b.x + b.w / 2.0, b.y + b.h / 2.0));
+        boxes.push((App::screen_name(fp), device_box(&app.peer(fp).map(|p| p.monitors).unwrap_or_default(), layout.get(fp).copied())));
     }
+    let screens: Vec<(String, f64, f64)> = boxes.iter().map(|(n, b)| (n.clone(), b.x + b.w / 2.0, b.y + b.h / 2.0)).collect();
     let computers: String = screens.iter().enumerate().map(|(i, (n, _, _))| format!("[computer_{i}]\nname={n}\n\n")).collect();
+    let bx = |n: &str| boxes.iter().find(|(m, _)| m == n).map(|(_, b)| *b).unwrap();
     let mut s = String::from("section: links\n");
     let l = links(&screens);
     for (n, _, _) in &screens {
         s += &format!("\t{n}:\n");
         for (_, dir, b) in l.iter().filter(|(a, _, _)| a == n) {
-            s += &format!("\t\t{dir} = {b}\n");
+            // Cross only where the two screens actually overlap in the layout, so the pointer keeps its height.
+            s += &match edge_range(dir, bx(n), bx(b)) {
+                Some(((a0, a1), (b0, b1))) => format!("\t\t{dir}({a0},{a1}) = {b}({b0},{b1})\n"),
+                None => format!("\t\t{dir} = {b}\n"),
+            };
         }
     }
-    s += "end\n\nsection: options\n\tclipboardSharing = false\nend\n";
+    s += &format!("end\n\nsection: options\n\tclipboardSharing = false\n\tkeystroke(Control+Alt+Home) = switchToScreen({})\nend\n", App::screen_name(&app.id.fp));
     (s, computers)
+}
+
+/// Percent ranges of `a`'s and `b`'s shared edge where they overlap, or None for whole edges.
+fn edge_range(dir: &str, a: Box2, b: Box2) -> Option<((i32, i32), (i32, i32))> {
+    let (a0, al, b0, bl) = if dir == "left" || dir == "right" { (a.y, a.h, b.y, b.h) } else { (a.x, a.w, b.x, b.w) };
+    let (lo, hi) = (a0.max(b0), (a0 + al).min(b0 + bl));
+    if hi <= lo || al <= 0.0 || bl <= 0.0 {
+        return None;
+    }
+    let pct = |v: f64, start: f64, len: f64| (((v - start) / len) * 100.0).round().clamp(0.0, 100.0) as i32;
+    let r = ((pct(lo, a0, al), pct(hi, a0, al)), (pct(lo, b0, bl), pct(hi, b0, bl)));
+    (r != ((0, 100), (0, 100))).then_some(r)
 }
 
 pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
@@ -443,7 +460,10 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         fwd(&dir.join("sunshine.log"))
     );
     let conf_path = dir.join("sunshine.conf");
-    std::fs::write(&conf_path, &conf)?;
+    // The virtual monitor's Sunshine id is stable; remembering it lets Extend start Sunshine once instead of twice.
+    let id_file = dir.join("output_id.txt");
+    let cached = output.and_then(|_| std::fs::read_to_string(&id_file).ok()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    std::fs::write(&conf_path, match &cached { Some(id) => format!("{conf}output_name = {id}\n"), None => conf.clone() })?;
     if fresh {
         let mut c = spawn(app, &exe, &[fwd(&conf_path), "--creds".into(), creds.0.clone(), creds.1.clone()], "sunshine-creds.log")?;
         let _ = tokio::time::timeout(Duration::from_secs(30), c.wait()).await;
@@ -454,7 +474,7 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     if let Some(o) = output {
         // Windows Sunshine selects a monitor by its device_id GUID, not `\\.\DISPLAYn`; an unknown name
         // silently falls back to the primary display (which looks like Mirror). Sunshine lists the GUIDs in
-        // its own log at startup, so read it from there and restart with `output_name` set.
+        // its own log at startup, so check the remembered id there and restart only if it changed.
         let sun_log = dir.join("sunshine.log");
         let mut id = None;
         for _ in 0..30 {
@@ -465,9 +485,12 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
             }
         }
         let id = id.context("Sunshine did not list the virtual monitor, so it can't be extended onto it (see sunshine.log)")?;
-        let _ = child.kill().await;
-        std::fs::write(&conf_path, format!("{conf}output_name = {id}\n"))?;
-        child = spawn(app, &exe, &args, &log)?;
+        if cached.as_deref() != Some(id.as_str()) {
+            let _ = child.kill().await;
+            std::fs::write(&conf_path, format!("{conf}output_name = {id}\n"))?;
+            let _ = std::fs::write(&id_file, &id);
+            child = spawn(app, &exe, &args, &log)?;
+        }
     }
     Ok((child, (exe, args, log), creds))
 }
@@ -705,6 +728,13 @@ pub async fn tick(app: &Arc<App>) {
     }
     let server_dead = app.deskflow_server.lock().unwrap().as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(Some(_))));
     if server_dead {
+        // macOS refuses to run the input server until it's allowed under Accessibility; say so instead of looping.
+        let log = std::fs::read_to_string(app.dir.join("logs").join("deskflow-server.log")).unwrap_or_default();
+        if log.to_lowercase().contains("accessibility") {
+            for fp in app.sessions.lock().unwrap().iter().filter(|(_, s)| s.origin && s.mode == Mode::Input).map(|(f, _)| f.clone()).collect::<Vec<_>>() {
+                app.note(&fp, "macOS needs permission: System Settings → Privacy & Security → Accessibility (and Input Monitoring) → allow deskflow-core, then choose Share Input again.");
+            }
+        }
         let _ = restart_deskflow_server(app).await;
     }
     // Origin sessions whose peer vanished (sleep, reboot, network change) are dropped and restored below.
@@ -804,6 +834,19 @@ pub async fn supervise(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edges_cross_where_screens_overlap() {
+        let a = Box2 { x: 0.0, y: 0.0, w: 192.0, h: 120.0 };
+        let lower = Box2 { x: 192.0, y: 60.0, w: 192.0, h: 120.0 };
+        assert_eq!(edge_range("right", a, lower), Some(((50, 100), (0, 50))));
+        let level = Box2 { x: 192.0, y: 0.0, w: 192.0, h: 120.0 };
+        assert_eq!(edge_range("right", a, level), None);
+        let apart = Box2 { x: 192.0, y: 500.0, w: 192.0, h: 120.0 };
+        assert_eq!(edge_range("right", a, apart), None);
+        let below = Box2 { x: 96.0, y: 120.0, w: 192.0, h: 108.0 };
+        assert_eq!(edge_range("down", a, below), Some(((50, 100), (0, 50))));
+    }
 
     #[test]
     fn streaming_follows_last_event() {

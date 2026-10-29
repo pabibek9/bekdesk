@@ -300,7 +300,10 @@ pub async fn open(app: &App, fp: &str) -> Result<(Stream, IpAddr)> {
             Err(_) => last = anyhow::anyhow!("timed out"),
         }
     }
-    Err(last.context(format!("cannot reach {}", p.name)))
+    Err(last.context(format!(
+        "can't reach {}. Make sure bekdesk is open there, both are on the same Wi-Fi, and Windows Firewall allows bekdesk on Private networks",
+        p.name
+    )))
 }
 
 pub async fn request(app: &App, fp: &str, req: &Req) -> Result<(Stream, IpAddr)> {

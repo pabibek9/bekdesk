@@ -321,6 +321,30 @@ impl App {
         }
     }
 
+    /// Plain-text summary for "Copy diagnostics": state plus the tail of every engine log.
+    pub fn diagnostics(&self) -> String {
+        fn tail(p: &std::path::Path, n: usize) -> String {
+            let t = std::fs::read_to_string(p).unwrap_or_default();
+            let lines: Vec<&str> = t.lines().collect();
+            lines[lines.len().saturating_sub(n)..].join("\n")
+        }
+        let mut out = format!("bekdesk {} on {} ({})\n\n", env!("CARGO_PKG_VERSION"), Self::os(), std::env::consts::ARCH);
+        let mut snap = self.snapshot();
+        if let Some(o) = snap.as_object_mut() {
+            o.remove("log");
+        }
+        out += &serde_json::to_string_pretty(&snap).unwrap_or_default();
+        out += "\n\n== bekdesk log ==\n";
+        out += &self.log.lock().unwrap().iter().rev().take(80).rev().cloned().collect::<Vec<_>>().join("\n");
+        let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(self.dir.join("logs")).into_iter().flatten().flatten().map(|e| e.path()).collect();
+        files.extend(std::fs::read_dir(self.dir.join("sunshine")).into_iter().flatten().flatten().map(|e| e.path().join("sunshine.log")));
+        files.sort();
+        for f in files.iter().filter(|f| f.exists()) {
+            out += &format!("\n\n== {} ==\n{}", f.strip_prefix(&self.dir).unwrap_or(f).display(), tail(f, 40));
+        }
+        out
+    }
+
     pub fn hello(&self) -> crate::net::Hello {
         crate::net::Hello { name: self.name(), os: Self::os().into(), kind: crate::display::device_kind().into(), monitors: self.monitors.lock().unwrap().chars().take(200).collect() }
     }

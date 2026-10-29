@@ -12,6 +12,12 @@
 
 - **Reconnect button:** every connected device (and the tablet) has a **Reconnect** button that disconnects and connects again in one click. The Share Input card now says plainly that your keyboard types on whichever computer the mouse is on.
 
+- **Bring the mouse home:** press **Ctrl+Alt+Home** while sharing input to jump the pointer back to this computer.
+- **The pointer crosses at the right height:** if one laptop sits higher or lower than the other in Manage Screens, the mouse now crosses only along the part of the edge where they overlap, instead of jumping.
+- **Extend starts faster:** bekdesk remembers the virtual screen, so the screen-sharing engine starts once instead of twice.
+- **Clearer errors:** "can't reach" now tells you what to check (bekdesk open on both, same Wi-Fi, Windows Firewall on Private networks); on a Mac, Share Input tells you exactly which permission to allow.
+- **Copy diagnostics** (Connections → Log): copies a full status report with recent engine logs, to paste when asking for help.
+
 Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview

@@ -164,6 +164,11 @@ fn readvertise(handle: &tauri::AppHandle, app: &App) {
 }
 
 #[tauri::command]
+fn diagnostics(app: Core) -> String {
+    app.diagnostics()
+}
+
+#[tauri::command]
 async fn connect_address(app: Core<'_>, host: String) -> Result<String, String> {
     let app = app.inner().clone();
     let fp = net::connect_address(&app, &host).await.map_err(|e| format!("{e:#}"))?;
@@ -301,7 +306,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {
