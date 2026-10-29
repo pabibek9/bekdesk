@@ -1,3 +1,15 @@
+## bekdesk 0.1.8 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Tablets and phones are found for real:** no more ready-made "Moonlight tablet" card. bekdesk now listens for Moonlight in the background (it can't show your screen until you pick Extend or Duplicate). When a tablet or phone taps this computer in Moonlight, a **New tablet or phone** card appears with its address: type the PIN it shows, give it a name, and press **Pair**. Pairing requests also show up when the card already says paired.
+- **Name your devices:** the name you type is what bekdesk shows everywhere. Android doesn't tell other devices its name, so bekdesk asks.
+- **Remove a paired device** from its card. If you removed this computer in Moonlight, remove the device here too and pair again.
+- **Fix "A pairing session with this uniqueid already exists (409)":** a pairing request Moonlight abandoned used to block every new try. Press **Decline**, or wait two minutes and bekdesk clears it.
+- **Honest status:** a paired device that isn't streaming now shows **Not connected** instead of "Waiting for Moonlight".
+- Several tablets or phones can be paired; one of them streams at a time.
+
 ## bekdesk 0.1.7 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

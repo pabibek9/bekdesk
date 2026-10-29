@@ -77,7 +77,6 @@ const reconnectBtn = (fp) => `<div class="acts1"><button class="btn" data-reconn
 
 // Sound plays on this computer only, unless the user also wants it on the device showing the screen.
 const soundToggle = (key, name) => `<label class="snd"><input type="checkbox" data-sound="${esc(key)}" ${(S.sound || {})[key] ? "checked" : ""}/> Also play sound on ${esc(name)}</label>`;
-let addTablet = false;
 // Pointer speed while the mouse is on this device (Windows only; bekdesk switches it as the mouse crosses over).
 const speedSlider = (key, name) => {
   if (S.me.os !== "windows") return "";
@@ -113,31 +112,39 @@ function entities() {
     });
   }
   const t = S.tablet || "off", ts = S.tablet_state || {};
-  $("#add-tablet").classList.toggle("hidden", t !== "off" || !!ts.paired || addTablet);
-  if (t === "off" && !ts.paired && !addTablet) return out;
-  const dn = ts.name || "Tablet or phone";
+  const host = `bekdesk ${S.me.name} for Moonlight`;
+  // A Moonlight device that tapped this computer and is waiting for its PIN. Nothing is shared until a mode is picked.
+  for (const p of ts.pending || []) {
+    out.push({ key: "pair:" + p.id, kind: "tablet", online: true, name: "New tablet or phone", os: "tablet", sub: `Moonlight at ${p.address || "an unknown address"} wants to connect`, pill: ["wait", "Asking to pair"], mode: "off", modes: [], disabled: true, extendOk: false,
+      extra: `<div class="hint">Type the 4-digit PIN shown on that device and give it a name. Nothing is shared until you choose Extend or Duplicate.</div>`
+        + `<div class="pinrow" data-pair="${esc(p.id)}"><input class="pname" placeholder="Name, e.g. Galaxy Tab" maxlength="40" autocomplete="off" /><input class="ppin" inputmode="numeric" placeholder="PIN" maxlength="4" size="5" autocomplete="off" /><button class="btn primary" data-act="pair">Pair</button><button class="btn" data-act="decline">Decline</button></div>`
+        + `<div class="hint">If Moonlight says a pairing session already exists, press Decline and tap <b>${esc(host)}</b> again.</div>` });
+  }
+  const paired = ts.devices || [];
+  if (t === "off" && !paired.length) return out;
+  const dn = paired.map((d) => d.name).filter(Boolean).join(", ") || "Tablet or phone";
   const mode = busy.tablet || t;
   let pill = ["ready", "Off"], extra = "";
   // Moonlight on Android streams 720p unless told otherwise, and only the device can change that.
   const sharp = `<div class="hint">For a sharp picture: in Moonlight open <b>Settings</b>, set <b>Video resolution</b> to <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""} move <b>Video bitrate</b> to about 40 Mbps, and set <b>Frame rate</b> to 90 on a 120 Hz screen (60 on a 60 Hz one).</div>`;
-  const steps = `<ol class="steps"><li>Install <b>Moonlight</b> on the tablet or phone (Play Store or F-Droid).</li><li>Open it and tap <b>${esc(S.me.name)}</b>.</li><li>Type the 4-digit PIN it shows here:</li></ol>`;
+  const list = paired.map((d) => `<div class="mlrow"><span class="gi">${ICON.tablet}</span><b>${esc(d.name || "Unnamed device")}</b><button class="link" data-act="forget" data-uuid="${esc(d.uuid)}">Remove</button></div>`).join("")
+    + (paired.length ? `<div class="hint">Removed this computer in Moonlight? Press Remove here too, then tap <b>${esc(host)}</b> in Moonlight to pair again.</div>` : "");
   if (t !== "off") {
     if (!ts.running) pill = ["wait", "Starting…"];
     else if (ts.streaming) pill = ["live", `Connected · ${LABEL[t]}`];
-    else if (ts.paired) pill = ["wait", "Waiting for Moonlight"];
-    else pill = ["wait", "Waiting to pair"];
-    const pin = `<div class="pinrow"><input id="tab-pin" inputmode="numeric" placeholder="PIN" maxlength="4" size="5" autocomplete="off" /><button class="btn" id="tab-pair">Pair</button></div>`;
+    else pill = ["wait", "Not connected"];
     extra = ts.streaming ? `<div class="hint ok">Streaming to ${esc(dn)} now. It switches off by itself when ${esc(dn)} disconnects.</div>`
-      : ts.paired ? `<div class="hint">Paired. In Moonlight tap <b>${esc(S.me.name)}</b>, then <b>Desktop</b>.</div>${sharp}`
-      : steps + pin + sharp;
+      : paired.length ? `<div class="hint">Open Moonlight on ${esc(dn)}, tap <b>${esc(host)}</b>, then <b>Desktop</b>.</div>${sharp}`
+      : `<div class="hint">Nothing is paired yet. Open Moonlight on the tablet or phone and tap <b>${esc(host)}</b>; it asks for a PIN here.</div>`;
+    extra += list;
     if (t === "extend") extra += speedSlider("tablet", dn);
     extra += soundToggle("tablet", dn);
     if (!busy.tablet) extra += reconnectBtn("tablet");
     if (t === "extend") extra += `<label class="resrow">Screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>`;
   } else {
-    extra = `<div class="hint">Uses the free Moonlight app on the tablet or phone. Choose Extend or Duplicate to connect.</div>`;
+    extra = `<div class="hint">Paired. Choose Extend or Duplicate, then open Moonlight on it. One device streams at a time.</div>` + list;
   }
-  out.push({ key: "tablet", kind: "tablet", online: true, name: dn, os: "tablet", sub: S.tablet_status || (t === "off" ? "Tablet or phone with Moonlight" : t === "extend" ? "Extra monitor for this PC" : "Showing this PC's screen"), pill, mode,
+  out.push({ key: "tablet", kind: "tablet", online: true, name: dn, os: "tablet", sub: t === "off" ? "Moonlight · paired" : t === "extend" ? "Extra monitor for this PC" : "Showing this PC's screen", pill, mode,
     modes: winHost ? ["extend", "mirror", "off"] : ["mirror", "off"], disabled: !!busy.tablet, extendOk: winHost, note: S.tablet_note, extra });
   return out;
 }
@@ -209,7 +216,8 @@ $("#device-list").addEventListener("click", async (e) => {
     } finally { delete busy[fp]; refresh(); }
     return;
   }
-  if (e.target.id === "tab-pair") submitPin();
+  const act = e.target.closest("[data-act]");
+  if (act) pairAction(act);
   const r = e.target.closest("[data-reconnect]");
   if (r) reconnect(r.dataset.reconnect);
 });
@@ -224,7 +232,6 @@ async function reconnect(fp) {
     toast("Reconnected");
   } finally { delete busy[fp]; refresh(); }
 }
-$("#add-tablet").addEventListener("click", () => { addTablet = true; render(); });
 let lastScan = 0;
 async function scan(manual) {
   if (!manual && Date.now() - lastScan < 15000) return;
@@ -239,17 +246,29 @@ $("#scan").addEventListener("click", () => scan(true));
 // Check for devices when bekdesk is opened or brought back, not constantly in the background.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) scan(false); });
 window.addEventListener("focus", () => scan(false));
-async function submitPin() {
-  const i = $("#tab-pin");
-  if (!i || i.value.length !== 4) return;
-  const pin = i.value;
-  i.blur();
-  try { await call("tablet_pin", { pin }); toast("Tablet paired"); i.value = ""; } catch (_) { i.focus(); }
+async function pairAction(b) {
+  const row = b.closest("[data-pair]");
+  try {
+    if (b.dataset.act === "forget") {
+      if (!confirm("Remove this device? It needs a new PIN to connect again.")) return;
+      await call("tablet_forget", { uuid: b.dataset.uuid });
+      toast("Removed");
+    } else if (b.dataset.act === "decline") {
+      await call("tablet_decline", { id: row.dataset.pair });
+    } else if (b.dataset.act === "pair") {
+      const name = row.querySelector(".pname"), pin = row.querySelector(".ppin");
+      if (!name.value.trim()) { name.focus(); toast("Give the device a name"); return; }
+      if (pin.value.length !== 4) { pin.focus(); return; }
+      b.disabled = true;
+      await call("tablet_pin", { id: row.dataset.pair, pin: pin.value, name: name.value });
+      toast(`${name.value.trim()} paired`);
+    }
+  } catch (_) { b.disabled = false; }
   refresh();
 }
 $("#device-list").addEventListener("input", (e) => {
   if (e.target.dataset.speed) { e.target.nextElementSibling.textContent = (+e.target.value).toFixed(2).replace(/0$/, "") + "×"; return; }
-  if (e.target.id === "tab-pin") { e.target.value = e.target.value.replace(/\D/g, ""); if (e.target.value.length === 4) submitPin(); }
+  if (e.target.classList.contains("ppin")) e.target.value = e.target.value.replace(/\D/g, "");
 });
 $("#device-list").addEventListener("change", async (e) => {
   if (e.target.dataset.speed) {
@@ -494,7 +513,7 @@ function renderActivity() {
   const live = S.devices.filter((d) => d.session);
   const ts = S.tablet_state || {};
   const tab = S.tablet && S.tablet !== "off"
-    ? `<div class="card row2"><span class="dot ${ts.streaming ? "live" : ""}"></span><div class="grow"><b>${esc(ts.name || "Tablet or phone")}</b> · ${LABEL[S.tablet]} (from this computer)<div class="small">${ts.streaming ? "Streaming now" : ts.paired ? "Paired · waiting for Moonlight" : "Waiting to pair"}</div></div></div>` : "";
+    ? `<div class="card row2"><span class="dot ${ts.streaming ? "live" : ""}"></span><div class="grow"><b>${esc(ts.name || "Tablet or phone")}</b> · ${LABEL[S.tablet]} (from this computer)<div class="small">${ts.streaming ? "Streaming now" : ts.paired ? `Not connected · open Moonlight on it and tap bekdesk ${esc(S.me.name)} for Moonlight` : "Nothing paired yet"}</div></div></div>` : "";
   setHTML($("#sessions"), live.map((d) => `<div class="card row2"><span class="dot live"></span><div class="grow"><b>${esc(d.name)}</b> · ${LABEL[d.session.mode]} ${d.session.origin ? "(from this computer)" : "(from " + esc(d.name) + ")"}<div class="small">${esc(d.session.status)} · ${esc(d.session.ip)} · ${fmtTime(d.session.uptime)}</div></div></div>`).join("") + tab
     || `<div class="empty">Nothing is connected right now. Pick Share Input, Extend or Duplicate on a device in Nearby Devices.</div>`);
   setHTML($("#transfers"), [...S.transfers].reverse().slice(0, 30).map((t) => `<div class="card"><div class="row2"><div class="grow"><b>${esc(t.label)}</b> <span class="small">${t.outgoing ? "to" : "from"} ${esc(t.peer)} · ${esc(t.state)}</span></div><span class="small">${fmtBytes(t.done)} / ${fmtBytes(t.total)}</span></div><div class="bar"><i style="width:${t.total ? (100 * t.done) / t.total : 100}%"></i></div></div>`).join("")

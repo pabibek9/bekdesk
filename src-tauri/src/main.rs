@@ -271,8 +271,18 @@ fn set_tablet(app: Core, mode: Mode, res: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn tablet_pin(app: Core<'_>, pin: String) -> Result<(), String> {
-    modes::tablet_pin(&app, pin.trim()).await.map_err(|e| format!("{e:#}"))
+async fn tablet_pin(app: Core<'_>, id: String, pin: String, name: String) -> Result<(), String> {
+    modes::tablet_pin(&app, &id, pin.trim(), &name).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn tablet_decline(app: Core<'_>, id: String) -> Result<(), String> {
+    modes::tablet_decline(&app, &id).await.map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn tablet_forget(app: Core<'_>, uuid: String) -> Result<(), String> {
+    modes::tablet_forget(&app, &uuid).await.map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
@@ -399,7 +409,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

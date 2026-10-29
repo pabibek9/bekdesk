@@ -134,7 +134,7 @@ async fn start_origin(app: &Arc<App>, fp: &str, mode: Mode) -> Result<()> {
             } else {
                 None
             };
-            let host = start_sunshine(app, fp, base, output.as_deref(), &app.peer_name(fp)).await;
+            let host = start_sunshine(app, fp, base, output.as_deref(), &app.peer_name(fp), false).await;
             let (child, args, creds) = match host {
                 Ok(h) => h,
                 Err(e) => {
@@ -423,7 +423,7 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
 
 type Respawn = (PathBuf, Vec<String>, String);
 
-async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, receiver: &str) -> Result<(tokio::process::Child, Respawn, (String, String))> {
+async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, receiver: &str, listen_only: bool) -> Result<(tokio::process::Child, Respawn, (String, String))> {
     let exe = ensure(app, "sunshine", key).await?;
     let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
     std::fs::create_dir_all(&dir)?;
@@ -441,7 +441,8 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     let _ = std::fs::remove_file(dir.join("sunshine.log"));
     let state = fwd(&dir.join("sunshine_state.json"));
     let apps = dir.join("apps.json");
-    std::fs::write(&apps, r#"{"env":{},"apps":[{"name":"Desktop","image-path":"desktop.png"}]}"#)?;
+    // A listener (tablet hosting switched off) offers no apps: Moonlight devices can find it and pair, but not stream.
+    std::fs::write(&apps, if listen_only { r#"{"env":{},"apps":[]}"# } else { r#"{"env":{},"apps":[{"name":"Desktop","image-path":"desktop.png"}]}"# })?;
     // Sunshine's identity certificate defaults to a folder next to sunshine.exe, which an engine update or
     // reinstall wipes, and a new identity makes every Moonlight client ask for a PIN again. Keep it with our
     // data instead, carrying over one an earlier version left in the engine folder.
@@ -502,10 +503,8 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
 pub fn stream_state(app: &App, key: &str) -> (Option<String>, bool) {
     use std::io::{Read, Seek, SeekFrom};
     let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
-    let paired = std::fs::read_to_string(dir.join("sunshine_state.json"))
-        .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v["root"]["named_devices"].as_array()?.last().map(|d| d["name"].as_str().unwrap_or("").to_string()));
+    let names: Vec<String> = moonlight_devices(app, key).into_iter().map(|d| d.1).collect();
+    let paired = (!names.is_empty()).then(|| names.join(", "));
     let streaming = std::fs::File::open(dir.join("sunshine.log"))
         .ok()
         .and_then(|mut f| {
@@ -517,6 +516,18 @@ pub fn stream_state(app: &App, key: &str) -> (Option<String>, bool) {
         })
         .is_some_and(|t| streaming_in_log(&t));
     (paired, streaming)
+}
+
+/// Moonlight devices paired with the Sunshine instance run for `key`, as (uuid, name).
+pub fn moonlight_devices(app: &App, key: &str) -> Vec<(String, String)> {
+    let path = app.dir.join("sunshine").join(&key[..key.len().min(12)]).join("sunshine_state.json");
+    let v: serde_json::Value = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    v["root"]["named_devices"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|d| (d["uuid"].as_str().unwrap_or("").to_string(), d["name"].as_str().unwrap_or("").to_string()))
+        .collect()
 }
 
 fn streaming_in_log(t: &str) -> bool {
@@ -552,17 +563,78 @@ async fn post_pin(app: Arc<App>, port: u16, creds: (String, String), pin: String
     }
 }
 
-pub async fn tablet_pin(app: &App, pin: &str) -> Result<()> {
+/// Calls the tablet host's Sunshine web API (loopback only, with bekdesk's own credentials).
+async fn tablet_api(app: &App, method: reqwest::Method, path: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value> {
+    let creds = std::fs::read_to_string(app.dir.join("sunshine").join("tablet").join("bekdesk-creds.txt")).context("tablets and phones aren't set up yet")?;
+    let (u, p) = creds.split_once(':').context("bad credentials file")?;
+    let client = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(Duration::from_secs(5)).build()?;
+    let mut r = client.request(method, format!("https://127.0.0.1:{}/api/{path}", TABLET_PORT + 1)).basic_auth(u, Some(p.trim()));
+    if let Some(b) = body {
+        r = r.json(&b);
+    }
+    Ok(r.send().await?.json().await?)
+}
+
+fn api_ok(v: &serde_json::Value) -> bool {
+    v["status"].as_bool() == Some(true) || v["status"].as_str() == Some("true")
+}
+
+/// Answer a Moonlight device's pairing request with the PIN it shows, under the name the user gave it.
+pub async fn tablet_pin(app: &App, id: &str, pin: &str, name: &str) -> Result<()> {
     if pin.len() != 4 || !pin.chars().all(|c| c.is_ascii_digit()) {
         bail!("PIN must be 4 digits");
     }
-    let dir = app.dir.join("sunshine").join("tablet");
-    let creds = std::fs::read_to_string(dir.join("bekdesk-creds.txt")).context("turn on tablet hosting first")?;
-    let (u, p) = creds.split_once(':').context("bad credentials file")?;
-    if !submit_pin(TABLET_PORT, &(u.to_string(), p.trim().to_string()), pin, "Tablet or phone", None).await? {
-        bail!("No pairing request found — tap this computer in Moonlight on the tablet first, then enter the PIN it shows");
+    let name: String = name.trim().chars().filter(|c| !c.is_control()).take(40).collect();
+    if name.is_empty() {
+        bail!("Give the device a name, e.g. Galaxy Tab");
+    }
+    let r = tablet_api(app, reqwest::Method::POST, "pin", Some(serde_json::json!({"pairing_id": id, "pin": pin, "name": name}))).await?;
+    app.moonlight_pending.lock().unwrap().remove(id);
+    if !api_ok(&r) {
+        bail!("Pairing failed: the PIN didn't match. Tap this computer in Moonlight again and type the new PIN");
+    }
+    app.log(format!("paired Moonlight device {name}"));
+    Ok(())
+}
+
+/// Turn down a pairing request (also clears one Moonlight left behind, which otherwise blocks new attempts).
+pub async fn tablet_decline(app: &App, id: &str) -> Result<()> {
+    tablet_api(app, reqwest::Method::DELETE, "pin", Some(serde_json::json!({"pairing_id": id}))).await?;
+    app.moonlight_pending.lock().unwrap().remove(id);
+    Ok(())
+}
+
+/// Unpair a Moonlight device; it has to pair with a PIN again to connect.
+pub async fn tablet_forget(app: &App, uuid: &str) -> Result<()> {
+    if !api_ok(&tablet_api(app, reqwest::Method::POST, "clients/unpair", Some(serde_json::json!({"uuid": uuid}))).await?) {
+        bail!("Sunshine didn't remove that device");
     }
     Ok(())
+}
+
+/// Pairing requests waiting in the tablet host, kept for the UI. Sunshine keeps a request after Moonlight has given
+/// up on it and then answers every new attempt with "409 pairing session already exists", so old ones are cancelled.
+async fn refresh_pending(app: &App) {
+    if app.tablet_host.lock().unwrap().is_none() {
+        app.moonlight_pending.lock().unwrap().clear();
+        return;
+    }
+    let Ok(v) = tablet_api(app, reqwest::Method::GET, "pin", None).await else { return };
+    let list = v["pairings"].as_array().cloned().unwrap_or_default();
+    let mut stale = vec![];
+    {
+        let mut p = app.moonlight_pending.lock().unwrap();
+        p.retain(|id, _| list.iter().any(|x| x["id"].as_str() == Some(id.as_str())));
+        for x in list {
+            let Some(id) = x["id"].as_str().map(String::from) else { continue };
+            if p.entry(id.clone()).or_insert((x, Instant::now())).1.elapsed() > Duration::from_secs(120) {
+                stale.push(id);
+            }
+        }
+    }
+    for id in stale {
+        let _ = tablet_decline(app, &id).await;
+    }
 }
 
 /// Where the virtual monitor goes relative to this computer's primary display, from the Workspace layout.
@@ -665,19 +737,33 @@ fn detach_virtual() {
     }
 }
 
+// When the Off-mode listener last failed to start; it is retried after a minute instead of every tick.
+static LISTEN_FAILED: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+
 async fn ensure_tablet_host(app: &Arc<App>) {
     let want = app.cfg.lock().unwrap().tablet;
     let have = app.tablet_host.lock().unwrap().as_ref().map(|s| s.mode);
-    if have == Some(want) || (want == Mode::Off && have.is_none()) {
+    if have == Some(want) {
         return;
     }
-    if let Some(old) = app.tablet_host.lock().unwrap().take() {
+    // While Off, a listener runs so Moonlight devices can find this computer and ask to pair. It has no apps, so
+    // nothing is streamed until the user picks Extend or Duplicate. Started only once Sunshine is downloaded.
+    if want == Mode::Off
+        && have.is_none()
+        && (!crate::engines::installed(app)["sunshine"]["installed"].as_bool().unwrap_or(false)
+            || LISTEN_FAILED.lock().unwrap().is_some_and(|t| t.elapsed() < Duration::from_secs(60)))
+    {
+        return;
+    }
+    let old = app.tablet_host.lock().unwrap().take();
+    if let Some(mut old) = old {
         if old.mode == Mode::Extend {
             detach_virtual();
         }
-    }
-    if want == Mode::Off {
-        return;
+        // Wait for the old Sunshine to exit so the new one can take the same ports.
+        for c in old.procs.iter_mut() {
+            let _ = c.kill().await;
+        }
     }
     let r = async {
         let output = if want == Mode::Extend {
@@ -689,8 +775,9 @@ async fn ensure_tablet_host(app: &Arc<App>) {
         } else {
             None
         };
-        let (child, respawn, _) = start_sunshine(app, "tablet", TABLET_PORT, output.as_deref(), "Moonlight").await?;
-        let mut s = session(want, true, IpAddr::from([0, 0, 0, 0]), "Ready — open Moonlight on the tablet");
+        let (child, respawn, _) = start_sunshine(app, "tablet", TABLET_PORT, output.as_deref(), "Moonlight", want == Mode::Off).await?;
+        let status = if want == Mode::Off { "Tablets and phones with Moonlight can find this computer" } else { "Ready — open Moonlight on the tablet" };
+        let mut s = session(want, true, IpAddr::from([0, 0, 0, 0]), status);
         s.procs.push(child);
         s.respawn = Some(respawn);
         *app.tablet_host.lock().unwrap() = Some(s);
@@ -698,6 +785,11 @@ async fn ensure_tablet_host(app: &Arc<App>) {
     }
     .await;
     if let Err(e) = r {
+        if want == Mode::Off {
+            *LISTEN_FAILED.lock().unwrap() = Some(Instant::now());
+            app.log(format!("couldn't listen for Moonlight devices: {e:#}"));
+            return;
+        }
         app.note("tablet", format!("{e:#}"));
         app.cfg.lock().unwrap().tablet = Mode::Off;
         app.save();
@@ -901,6 +993,7 @@ pub async fn tick(app: &Arc<App>) {
         });
     }
     ensure_tablet_host(app).await;
+    refresh_pending(app).await;
 }
 
 /// Mark advertised devices that no longer accept connections as stale so they disappear from the list.

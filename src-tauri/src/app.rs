@@ -166,6 +166,8 @@ pub struct App {
     pub identify: tokio::sync::Notify,
     /// Last time the tablet was seen streaming; used to switch it off once it disconnects.
     pub tablet_seen: Mutex<Option<Instant>>,
+    /// Moonlight pairing requests waiting for a PIN, by pairing id, with when bekdesk first saw them.
+    pub moonlight_pending: Mutex<HashMap<String, (Value, Instant)>>,
     pub tls: crate::net::Tls,
     seq: AtomicU64,
 }
@@ -209,6 +211,7 @@ impl App {
             engine_lock: Default::default(),
             identify: Default::default(),
             tablet_seen: Default::default(),
+            moonlight_pending: Default::default(),
             tls,
             seq: AtomicU64::new(1),
         }))
@@ -427,7 +430,9 @@ impl App {
             "tablet_res": cfg.tablet_res,
             "tablet_status": self.tablet_host.lock().unwrap().as_ref().map(|s| s.status.clone()),
             "tablet_note": notes.get("tablet"),
-            "tablet_state": {"running": self.tablet_host.lock().unwrap().is_some(), "paired": tablet_state.0.is_some(), "name": tablet_state.0, "streaming": tablet_state.1},
+            "tablet_state": {"running": self.tablet_host.lock().unwrap().is_some(), "paired": tablet_state.0.is_some(), "name": tablet_state.0, "streaming": tablet_state.1,
+                "pending": self.moonlight_pending.lock().unwrap().values().map(|(v, _)| v.clone()).collect::<Vec<_>>(),
+                "devices": crate::modes::moonlight_devices(self, "tablet").into_iter().map(|(uuid, name)| json!({"uuid": uuid, "name": name})).collect::<Vec<_>>()},
             "sound": cfg.sound,
             "pointer": cfg.pointer,
             "components": notes.get("components"),

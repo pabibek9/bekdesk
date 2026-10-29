@@ -77,6 +77,10 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: v
 .note.on { display: block; animation: fade .2s ease; }
 .steps { margin: 12px 0 8px; padding-left: 20px; color: var(--ink2); font-size: 12.5px; line-height: 1.7; }
 .pinrow { display: flex; gap: 8px; align-items: center; }
+.pinrow .pname { width: 190px; text-align: left; font: inherit; letter-spacing: 0; }
+.mlrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+.mlrow .gi svg { width: 16px; height: 16px; stroke: var(--ink2); fill: none; stroke-width: 1.7; display: block; }
+.mlrow .link { margin-left: auto; }
 .pinrow input { width: 86px; text-align: center; font: 600 18px ui-monospace, "Cascadia Mono", Menlo, monospace; letter-spacing: .25em; }
 .resrow { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--ink2); }
 .resrow input { width: 110px; }
