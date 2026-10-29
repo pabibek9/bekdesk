@@ -389,7 +389,7 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
     std::fs::write(
         &ini,
         format!(
-            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
+            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nenableClipboard=false\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
             App::screen_name(&app.id.fp),
             fwd(&conf)
         ),
