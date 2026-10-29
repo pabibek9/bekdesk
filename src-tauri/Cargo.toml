@@ -1,6 +1,6 @@
 [package]
 name = "bekdesk"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Local-network multi-computer workspace: share input, extend and mirror displays"
@@ -40,6 +40,9 @@ windows-sys = { version = "0.59", features = [
   "Win32_Devices_DeviceAndDriverInstallation",
   "Win32_Devices_Display",
   "Win32_System_Power",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+  "Win32_Security",
 ] }
 
 [dev-dependencies]

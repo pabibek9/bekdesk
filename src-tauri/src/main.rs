@@ -61,6 +61,25 @@ async fn identify_screens(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Put bekdesk in a job object that kills every engine it started when bekdesk exits or crashes,
+/// so no Sunshine/Moonlight keeps running (and streaming) behind the user's back.
+#[cfg(windows)]
+fn engines_die_with_us() {
+    use windows_sys::Win32::System::JobObjects::*;
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return;
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info as *const _ as *const _, std::mem::size_of_val(&info) as u32);
+        AssignProcessToJobObject(job, GetCurrentProcess());
+        // The handle is deliberately never closed: Windows closes it when bekdesk exits, which ends the job.
+    }
+}
+
 #[tauri::command]
 fn snapshot(app: Core) -> serde_json::Value {
     let mut v = app.snapshot();
@@ -210,6 +229,8 @@ fn main() {
         let r = display::install_elevated(std::path::Path::new(&args[2]));
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    #[cfg(windows)]
+    engines_die_with_us();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--background"])))

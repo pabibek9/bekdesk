@@ -735,6 +735,8 @@ async fn probe_peers(app: &Arc<App>) {
 }
 
 pub async fn supervise(app: Arc<App>) {
+    let a = app.clone();
+    let _ = tokio::task::spawn_blocking(move || crate::engines::kill_orphans(&a)).await;
     let mut n = 0u32;
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;

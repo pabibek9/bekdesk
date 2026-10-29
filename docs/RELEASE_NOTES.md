@@ -1,17 +1,11 @@
-## bekdesk 0.1.5 — preview
+## bekdesk 0.1.6 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
 
 ### Changes
-- **Fix: Extend showed a copy of the main screen.** Sunshine needs the virtual monitor's device ID, not its `\\.\DISPLAYn` name, and otherwise falls back to the main display. bekdesk now reads the ID from Sunshine's own startup log and restarts it on the right monitor. If the virtual monitor can't be found it now says so instead of silently duplicating.
-- **Nearby Devices rebuilt:** every device, including the Android tablet, is a card with its connection status (Ready / Connecting / Connected · Extend) and the Extend / Duplicate / Share Input / Off buttons always visible. "Mirror" is now called **Duplicate**.
-- **Tablet connection is tracked:** the card shows Waiting for the tablet, Paired, or Connected, with the setup steps and a PIN box that pairs by itself after 4 digits.
-- **Clicks no longer get lost:** the window used to redraw every second, which could swallow a click mid-press. Screens now update in place, with animations.
-- **Manage Screens:** the virtual monitor no longer shows up as an extra screen of this PC (it was the "third screen"); the monitor list stays live when screens change; names and status sit under each device without overlapping; every screen has a number and **Identify screens** flashes that number on the real screens. Moving a device while Extend is on moves the virtual monitor to match.
-- **Less lag, sharper picture:** the receiving screen now streams at its own real resolution (no blurry 1080p rescale), with V-Sync and frame pacing off (each added up to a frame of delay), a pointer that maps 1:1 like a normal monitor, and sound kept on the computer being shown.
-- **Your address, like a remote-desktop ID:** Nearby Devices shows this computer's address and a 9-digit ID with a Copy button. If another computer doesn't show up (Wi-Fi that isolates devices, another subnet), type its address under **Connect by address**; it is remembered and reconnected automatically.
-- **Rename this computer** by clicking its name at the bottom of the sidebar; other computers see the new name immediately.
-- **Everything bekdesk needs downloads by itself** a few seconds after it starts (progress at the top of Nearby Devices), and retries if you were offline, instead of waiting for the first connection.
+- **Fix: the tablet kept showing a copy of the screen while bekdesk said Off**, and updates failed with "the process cannot access the file because it is being used by another process". A screen-sharing engine started by an older bekdesk was still running in the background (closing or uninstalling bekdesk didn't stop it). bekdesk now stops leftover engines when it starts, and on Windows every engine it starts now closes automatically when bekdesk closes or crashes.
+
+Everything from 0.1.5 (rebuilt Nearby Devices and Manage Screens, your address and Connect by address, Identify screens, automatic downloads, low-latency streaming) is included.
 
 ### Still preview
 The Extend fix and tablet status are based on Sunshine's documentation and source and have not been tried on real hardware yet. Tested on one Windows PC and in CI only; input sharing and screen streaming have not yet been tested between two physical machines.

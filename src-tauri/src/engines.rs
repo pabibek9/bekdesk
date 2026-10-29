@@ -163,6 +163,28 @@ pub async fn prefetch(app: std::sync::Arc<App>) {
     }
 }
 
+/// Engines left running by an earlier bekdesk (crash, update, uninstall) keep serving old streams and lock
+/// their files so updates fail ("used by another process"). Stop anything running from our engines folder.
+pub fn kill_orphans(app: &App) {
+    let dir = app.dir.join("engines");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(format!(
+                "Get-Process | Where-Object {{ $_.Path -and $_.Path.StartsWith('{}', 'OrdinalIgnoreCase') }} | Stop-Process -Force",
+                dir.display().to_string().replace('\'', "''")
+            ))
+            .creation_flags(0x0800_0000)
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("pkill").arg("-f").arg(&dir).status();
+    }
+}
+
 /// Spawn an engine process with output captured to the bekdesk log folder.
 pub fn spawn(app: &App, exe: &Path, args: &[String], log: &str) -> Result<tokio::process::Child> {
     let f = std::fs::File::create(app.dir.join("logs").join(log))?;
