@@ -84,7 +84,7 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 .box { position: absolute; border: 1.5px solid var(--ink3); border-radius: 8px; background: var(--bg); cursor: grab; transition: box-shadow .15s; }
 .box.me { border-color: var(--ink); }
 .box.dragging { cursor: grabbing; box-shadow: var(--shadow); z-index: 2; }
-.box .lbl { position: absolute; left: 8px; top: 6px; font-size: 12px; font-weight: 600; pointer-events: none; }
+.box .lbl { position: absolute; z-index: 1; left: 8px; top: 6px; font-size: 12px; font-weight: 600; pointer-events: none; }
 .box .mon { position: absolute; border: 1px solid var(--line); background: var(--panel); border-radius: 3px; pointer-events: none; }
 
 .row2 { display: flex; align-items: center; gap: 12px; }

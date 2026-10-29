@@ -148,7 +148,7 @@ async fn start_origin(app: &Arc<App>, fp: &str, mode: Mode) -> Result<()> {
             let mut s = session(mode, true, ip, "Waiting for the receiver");
             s.procs.push(child);
             s.respawn = Some(args);
-            s.tasks.push(tokio::spawn(post_pin(app.clone(), base, creds, pin.clone(), app.peer_name(fp))));
+            s.tasks.push(tokio::spawn(post_pin(app.clone(), base, creds, pin.clone(), app.peer_name(fp), ip)));
             app.sessions.lock().unwrap().insert(fp.into(), s);
             if let Err(e) = net::request(app, fp, &Req::Start { mode, pin, port: base }).await {
                 stop_local(app, fp, false);
@@ -220,10 +220,21 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
             let (app2, fp2) = (app.clone(), fp.to_string());
             s.tasks.push(tokio::spawn(async move {
                 let pair = async {
-                    let mut c = spawn(&app2, &exe, &["pair".into(), host.clone(), "--pin".into(), pin], "moonlight-pair.log")?;
-                    let st = tokio::time::timeout(Duration::from_secs(120), c.wait()).await.context("pairing timed out")??;
-                    if !st.success() {
-                        app2.log(format!("moonlight pair exited with {st} (already paired hosts also report this)"));
+                    if !moonlight_paired(&exe, &host).await {
+                        // The pair window stays open after success, so watch for pairing and close it ourselves.
+                        let mut c = spawn(&app2, &exe, &["pair".into(), host.clone(), "--pin".into(), pin], "moonlight-pair.log")?;
+                        let mut paired = false;
+                        for _ in 0..40 {
+                            tokio::time::sleep(Duration::from_secs(3)).await;
+                            if moonlight_paired(&exe, &host).await {
+                                paired = true;
+                                break;
+                            }
+                        }
+                        let _ = c.start_kill();
+                        if !paired {
+                            bail!("display pairing did not complete");
+                        }
                     }
                     let args = vec!["stream".to_string(), host, "Desktop".into(), "--display-mode".into(), "fullscreen".into()];
                     spawn(&app2, &exe, &args, "moonlight-stream.log")
@@ -248,6 +259,16 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
     }
     app.log(format!("{} from {}", label(mode), app.peer_name(fp)));
     Ok(())
+}
+
+/// `Moonlight list <host>` prints the host's apps only once this client is paired with it.
+async fn moonlight_paired(exe: &Path, host: &str) -> bool {
+    let mut c = tokio::process::Command::new(exe);
+    c.args(["list", host]).kill_on_drop(true).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    if let Some(d) = exe.parent() {
+        c.current_dir(d);
+    }
+    matches!(tokio::time::timeout(Duration::from_secs(15), c.output()).await, Ok(Ok(o)) if String::from_utf8_lossy(&o.stdout).contains("Desktop"))
 }
 
 // ---------- Deskflow ----------
@@ -321,7 +342,8 @@ pub fn default_positions(app: &App) -> HashMap<String, crate::app::Pos> {
     layout
 }
 
-fn server_config(app: &App) -> String {
+/// Deskflow 1.27 config: (links file, `[computer_N]` settings sections — screens live in the settings file).
+fn server_config(app: &App) -> (String, String) {
     let layout = default_positions(app);
     let peers: Vec<String> = app.sessions.lock().unwrap().iter().filter(|(_, s)| s.origin && s.mode == Mode::Input).map(|(fp, _)| fp.clone()).collect();
     let me = device_box(&app.monitors.lock().unwrap(), layout.get(SELF).copied());
@@ -330,11 +352,8 @@ fn server_config(app: &App) -> String {
         let b = device_box(&app.peer(fp).map(|p| p.monitors).unwrap_or_default(), layout.get(fp).copied());
         screens.push((App::screen_name(fp), b.x + b.w / 2.0, b.y + b.h / 2.0));
     }
-    let mut s = String::from("section: screens\n");
-    for (n, _, _) in &screens {
-        s += &format!("\t{n}:\n");
-    }
-    s += "end\n\nsection: links\n";
+    let computers: String = screens.iter().enumerate().map(|(i, (n, _, _))| format!("[computer_{i}]\nname={n}\n\n")).collect();
+    let mut s = String::from("section: links\n");
     let l = links(&screens);
     for (n, _, _) in &screens {
         s += &format!("\t{n}:\n");
@@ -343,7 +362,7 @@ fn server_config(app: &App) -> String {
         }
     }
     s += "end\n\nsection: options\n\tclipboardSharing = false\nend\n";
-    s
+    (s, computers)
 }
 
 pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
@@ -358,11 +377,12 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
     let dir = app.dir.join("deskflow");
     std::fs::create_dir_all(&dir)?;
     let (conf, ini) = (dir.join("server.conf"), dir.join("server.ini"));
-    std::fs::write(&conf, server_config(app))?;
+    let (links_conf, computers) = server_config(app);
+    std::fs::write(&conf, links_conf)?;
     std::fs::write(
         &ini,
         format!(
-            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n[server]\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
+            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
             App::screen_name(&app.id.fp),
             fwd(&conf)
         ),
@@ -417,18 +437,28 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
     Ok((child, (exe, args, log), creds))
 }
 
-/// Feed the PIN to Sunshine's local API once the receiver has started pairing.
-async fn post_pin(app: Arc<App>, port: u16, creds: (String, String), pin: String, name: String) {
-    let Ok(client) = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(Duration::from_secs(5)).build() else { return };
+/// Submit a PIN for a pairing request waiting in a local Sunshine instance (2026 API: GET lists
+/// pending requests, POST answers one by `pairing_id`). Prefers the request from `from`, else the only one.
+async fn submit_pin(port: u16, creds: &(String, String), pin: &str, name: &str, from: Option<IpAddr>) -> Result<bool> {
+    let client = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(Duration::from_secs(5)).build()?;
     let url = format!("https://127.0.0.1:{}/api/pin", port + 1);
+    let list: serde_json::Value = client.get(&url).basic_auth(&creds.0, Some(&creds.1)).send().await?.json().await?;
+    let pending = list["pairings"].as_array().cloned().unwrap_or_default();
+    let pick = from
+        .and_then(|ip| pending.iter().find(|p| p["address"].as_str().is_some_and(|a| a.contains(&ip.to_string()))))
+        .or(if pending.len() == 1 { pending.first() } else { None });
+    let Some(id) = pick.and_then(|p| p["id"].as_str()) else { return Ok(false) };
+    let r: serde_json::Value = client.post(&url).basic_auth(&creds.0, Some(&creds.1)).json(&serde_json::json!({"pairing_id": id, "pin": pin, "name": name})).send().await?.json().await?;
+    Ok(r["status"].as_bool() == Some(true) || r["status"].as_str() == Some("true"))
+}
+
+/// Answer the receiver's pairing request once it shows up.
+async fn post_pin(app: Arc<App>, port: u16, creds: (String, String), pin: String, name: String, from: IpAddr) {
     for _ in 0..80 {
         tokio::time::sleep(Duration::from_millis(1500)).await;
-        let r = client.post(&url).basic_auth(&creds.0, Some(&creds.1)).json(&serde_json::json!({"pin": pin, "name": name})).send().await;
-        if let Ok(r) = r {
-            if r.status().is_success() && r.text().await.unwrap_or_default().contains("true") {
-                app.log(format!("display pairing with {name} accepted"));
-                return;
-            }
+        if let Ok(true) = submit_pin(port, &creds, &pin, &name, Some(from)).await {
+            app.log(format!("display pairing with {name} accepted"));
+            return;
         }
     }
 }
@@ -440,11 +470,8 @@ pub async fn tablet_pin(app: &App, pin: &str) -> Result<()> {
     let dir = app.dir.join("sunshine").join("tablet");
     let creds = std::fs::read_to_string(dir.join("bekdesk-creds.txt")).context("turn on tablet hosting first")?;
     let (u, p) = creds.split_once(':').context("bad credentials file")?;
-    let client = reqwest::Client::builder().danger_accept_invalid_certs(true).timeout(Duration::from_secs(5)).build()?;
-    let r = client.post(format!("https://127.0.0.1:{}/api/pin", TABLET_PORT + 1)).basic_auth(u, Some(p.trim())).json(&serde_json::json!({"pin": pin, "name": "tablet"})).send().await?;
-    let body = r.text().await.unwrap_or_default();
-    if !body.contains("true") {
-        bail!("Sunshine did not accept the PIN — start pairing on the tablet first");
+    if !submit_pin(TABLET_PORT, &(u.to_string(), p.trim().to_string()), pin, "Moonlight tablet", None).await? {
+        bail!("No pairing request found — tap this computer in Moonlight on the tablet first, then enter the PIN it shows");
     }
     Ok(())
 }
@@ -615,6 +642,9 @@ pub async fn supervise(app: Arc<App>) {
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
         tick(&app).await;
+        if std::env::var_os("BEKDESK_DUMP").is_some() {
+            let _ = std::fs::write(app.dir.join("status.json"), app.snapshot().to_string());
+        }
     }
 }
 

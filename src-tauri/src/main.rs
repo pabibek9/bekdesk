@@ -143,9 +143,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .setup(move |app| {
-            let dir = app.path().app_data_dir()?;
+            // Overrides let two instances run side by side on one machine for testing.
+            let dir = std::env::var_os("BEKDESK_DATA").map(PathBuf::from).map_or_else(|| app.path().app_data_dir(), Ok)?;
+            let port = std::env::var("BEKDESK_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(net::PORT);
             let host = hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "Computer".into());
-            let core = App::new(dir, net::PORT, &host)?;
+            let core = App::new(dir, port, &host)?;
             if let Some(w) = app.get_webview_window("main") {
                 let mons: Vec<String> = w
                     .available_monitors()

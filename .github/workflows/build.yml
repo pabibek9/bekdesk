@@ -1,0 +1,107 @@
+name: build
+
+# Push/PR: Windows test + installer (cheap). Tags and manual runs: Windows + macOS, and tags publish a Release.
+# macOS runners bill at 10x on private repos, so they only run when asked.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: Also build macOS
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            args: ""
+          - os: macos-latest
+            name: macOS
+            args: "--target universal-apple-darwin"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Skip macOS unless tagged or requested
+        id: gate
+        shell: bash
+        run: |
+          run=true
+          if [ "${{ matrix.name }}" = "macOS" ] && [ "${{ startsWith(github.ref, 'refs/tags/v') }}" != "true" ] && [ "${{ github.event.inputs.macos }}" != "true" ]; then run=false; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.gate.outputs.run == 'true'
+        with:
+          targets: ${{ matrix.name == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        if: steps.gate.outputs.run == 'true'
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 20
+      - name: Tests
+        if: steps.gate.outputs.run == 'true'
+        working-directory: src-tauri
+        run: cargo test --lib --test e2e
+      - name: Build installer
+        if: steps.gate.outputs.run == 'true'
+        run: npx --yes @tauri-apps/cli@2 build ${{ matrix.args }}
+      - name: Collect
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          mkdir dist
+          if [ "${{ matrix.name }}" = "Windows" ]; then
+            cp src-tauri/target/release/bundle/nsis/*.exe dist/bekdesk-Windows-x64-Setup.exe
+          else
+            cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg dist/bekdesk-macOS-universal.dmg
+          fi
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: bekdesk-${{ matrix.name }}
+          path: dist/*
+          retention-days: 7
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Third-party license report
+        continue-on-error: true
+        run: |
+          cargo install cargo-about --locked --quiet
+          cd src-tauri && cargo about generate -c ../about.toml ../about.hbs -o ../dist/THIRD_PARTY_LICENSES.html
+      - name: Checksums and docs
+        run: |
+          cp LICENSE THIRD_PARTY.md docs/INSTALL.md dist/
+          cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: docs/RELEASE_NOTES.md
+          prerelease: true

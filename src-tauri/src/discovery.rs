@@ -30,7 +30,11 @@ pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
                         continue;
                     }
                     let mut addrs: Vec<_> = info.get_addresses().iter().copied().collect();
-                    addrs.sort_by_key(|a| a.is_ipv6()); // IPv4 first; link-local v6 often lacks a scope
+                    // Routable IPv4 first; link-local addresses (169.254/fe80) are last resorts.
+                    addrs.sort_by_key(|a| match a {
+                        std::net::IpAddr::V4(v) => v.is_link_local() as u8,
+                        std::net::IpAddr::V6(_) => 2,
+                    });
                     let peer = Peer {
                         name: info.get_property_val_str("name").unwrap_or("Unknown").to_string(),
                         os: info.get_property_val_str("os").unwrap_or("").to_string(),
