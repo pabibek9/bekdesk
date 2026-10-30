@@ -395,14 +395,19 @@ function wsItems() {
   return items;
 }
 
+// Windows' details (connection, monitor name, refresh, rotation) for this PC's screen whose corner is at (x, y).
+const screenAt = (x, y) => (S.me.screens || []).find((d) => d.x === x && d.y === y);
+
 // Screens are sized in percent of their group, so resizing the window only animates the group box.
 function frameHTML(it) {
   const PW = it.b.w * 10, PH = it.b.h * 10;
   const screens = it.mons.map((m, i) => {
     const l = ((m[0] - it.b.x0) / PW) * 100, t = ((m[1] - it.b.y0) / PH) * 100, w = (m[2] / PW) * 100, h = (m[3] / PH) * 100;
-    const tag = it.kind === "tablet" ? (it.vnum ? `<span class="num">${it.vnum}</span>` : "") : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}</span>`;
+    const info = it.me ? screenAt(m[0], m[1]) : null;
+    const conn = info && info.conn && info.conn !== "Other" ? `<em class="conn">${esc(info.conn)}</em>` : "";
+    const tag = it.kind === "tablet" ? (it.vnum ? `<span class="num">${it.vnum}</span>` : "") : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}${conn}</span>`;
     const stand = it.kind === "desktop" ? `<span class="neck"></span><span class="foot"></span>` : "";
-    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-w="${m[2]}" data-h="${m[3]}" data-i="${i}"` : "";
+    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-w="${m[2]}" data-h="${m[3]}" data-i="${i}" title="${esc(info && info.label || "")}"` : "";
     return `<div class="screen ${it.kind}"${pos} style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"><i></i>${tag}<span class="res">${m[2]}×${m[3]}${it.guess ? "?" : ""}</span>${stand}</div>`;
   }).join("");
   const base = it.kind === "laptop" ? `<span class="kbd"></span>` : "";
@@ -452,28 +457,72 @@ function renderWorkspace() {
 $("#identify").addEventListener("click", () => call("identify_screens"));
 // Right-click one of this computer's screens: make it the main display, identify, or open display settings.
 function hideCtx() { $("#ctx").classList.add("hidden"); }
+// Resolution list for one screen, inside the same menu.
+async function showModes(at, info) {
+  const m = $("#ctx");
+  m.innerHTML = `<div class="ctx-h"><b>Resolution &amp; refresh rate</b><span>Now ${info.w}×${info.h} · ${info.hz} Hz</span></div><div class="ctx-list">Loading…</div>`;
+  try {
+    const { modes } = await invoke("display_modes", at);
+    const sideways = info.orientation % 2 === 1;
+    m.querySelector(".ctx-list").innerHTML = modes.map(([w, h, hz]) => {
+      const now = (sideways ? h === info.w && w === info.h : w === info.w && h === info.h) && hz === info.hz;
+      return `<button data-act="mode" data-w="${w}" data-h="${h}" data-hz="${hz}" class="${now ? "on" : ""}">${w} × ${h} <span>${hz} Hz</span></button>`;
+    }).join("") || "No other modes";
+  } catch (e) { m.querySelector(".ctx-list").textContent = String(e); }
+}
+// Display changes can leave a monitor black; like Windows, undo them unless the user confirms within 15 seconds.
+async function changeAndConfirm(at, change, undo) {
+  try { await call("change_display", { ...at, ...change }); } catch (_) { return; }
+  refresh();
+  const k = $("#keep");
+  let left = 15;
+  const tick = () => { k.querySelector("b").textContent = `Reverting in ${left} s`; };
+  tick();
+  k.classList.remove("hidden");
+  const done = (keep) => {
+    clearInterval(t);
+    k.classList.add("hidden");
+    if (!keep) call("change_display", { ...at, ...undo }).then(refresh, () => {});
+  };
+  const t = setInterval(() => { if (--left <= 0) done(false); else tick(); }, 1000);
+  k.querySelector("[data-k=keep]").onclick = () => done(true);
+  k.querySelector("[data-k=revert]").onclick = () => done(false);
+}
 $("#canvas").addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const sc = e.target.closest(".group.me .screen");
   const m = $("#ctx");
   const main = sc && sc.dataset.i === "0";
-  m.innerHTML = (sc ? `<button data-act="primary" ${main ? "disabled" : ""}>${main ? "This is the main display" : `Make screen ${+sc.dataset.i + 1} the main display`}</button>` : "")
+  const info = sc && screenAt(+sc.dataset.x, +sc.dataset.y);
+  const head = info ? `<div class="ctx-h"><b>Screen ${+sc.dataset.i + 1}${info.label ? " · " + esc(info.label) : ""}</b><span>${esc(info.conn)} · ${info.w}×${info.h} · ${info.hz} Hz</span></div>` : "";
+  m.innerHTML = head + (sc ? `<button data-act="primary" ${main ? "disabled" : ""}>${main ? "This is the main display" : `Make screen ${+sc.dataset.i + 1} the main display`}</button>` : "")
+    + (info ? `<button data-act="modes">Resolution &amp; refresh rate…</button>
+      <div class="ctx-row">Rotate ${["Landscape", "Portrait", "Landscape (flipped)", "Portrait (flipped)"].map((t, o) => `<button data-act="rotate" data-o="${o}" class="${info.orientation === o ? "on" : ""}" title="${t}">${["▭", "▯", "▭↻", "▯↻"][o]}</button>`).join("")}</div>
+      ${main ? "" : `<button data-act="off">Turn off this screen</button>`}` : "")
     + `<button data-act="identify">Identify screens</button><button data-act="settings">Display settings…</button>`;
   m._sc = sc;
   m.style.left = Math.min(e.clientX, innerWidth - 260) + "px";
-  m.style.top = Math.min(e.clientY, innerHeight - 140) + "px";
+  m.style.top = Math.min(e.clientY, innerHeight - 300) + "px";
   m.classList.remove("hidden");
 });
 $("#ctx").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
   if (!b || b.disabled) return;
-  const sc = $("#ctx")._sc;
+  const sc = $("#ctx")._sc, at = sc && { x: +sc.dataset.x, y: +sc.dataset.y }, info = sc && screenAt(at.x, at.y);
+  if (b.dataset.act === "modes") return showModes(at, info);
   hideCtx();
-  if (b.dataset.act === "primary") { await call("make_primary", { x: +sc.dataset.x, y: +sc.dataset.y }); toast("Main display changed"); }
+  if (b.dataset.act === "primary") { await call("make_primary", at); toast("Main display changed"); }
+  if (b.dataset.act === "mode") return changeAndConfirm(at, { w: +b.dataset.w, h: +b.dataset.h, hz: +b.dataset.hz }, { w: info.w, h: info.h, hz: info.hz });
+  if (b.dataset.act === "rotate") return changeAndConfirm(at, { orientation: +b.dataset.o }, { orientation: info.orientation });
+  if (b.dataset.act === "off") {
+    if (!armed(b, "Press again to turn off")) { $("#ctx").classList.remove("hidden"); return; }
+    await call("change_display", { ...at, off: true }); toast("Screen turned off. Win+P → Extend turns it back on."); refresh();
+  }
   if (b.dataset.act === "identify") call("identify_screens");
   if (b.dataset.act === "settings") invoke("open_display_settings");
 });
-document.addEventListener("click", (e) => { if (!e.target.closest("#ctx")) hideCtx(); });
+// A click that rebuilt the menu (e.g. opening the resolution list) leaves its target detached: not an outside click.
+document.addEventListener("click", (e) => { if (e.target.isConnected && !e.target.closest("#ctx")) hideCtx(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCtx(); });
 $("#canvas").addEventListener("pointerdown", (e) => {
   const g = e.target.closest(".group");

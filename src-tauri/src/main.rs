@@ -89,6 +89,28 @@ fn move_display(app: tauri::AppHandle, core: Core, x: i32, y: i32, nx: i32, ny: 
     Ok(())
 }
 
+/// Manage Screens right-click menu: what the screen at (x, y) supports and is set to now.
+#[tauri::command]
+fn display_modes(x: i32, y: i32) -> Result<serde_json::Value, String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    Ok(serde_json::json!({"modes": display::modes(&name)}))
+}
+
+/// Resolution/refresh (`w`, `h`, `hz`), rotation (`orientation` 0-3) or turn off (`off`) for the screen at (x, y).
+#[tauri::command]
+fn change_display(app: tauri::AppHandle, core: Core, x: i32, y: i32, w: Option<u32>, h: Option<u32>, hz: Option<u32>, orientation: Option<u32>, off: Option<bool>) -> Result<(), String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    let r = match (w, h, hz, orientation, off) {
+        (_, _, _, _, Some(true)) => display::turn_off(&name),
+        (_, _, _, Some(o), _) => display::rotate(&name, o.min(3)),
+        (Some(w), Some(h), Some(hz), _, _) => display::set_resolution(&name, w, h, hz),
+        _ => return Err("nothing to change".into()),
+    };
+    r.map_err(|e| format!("{e:#}"))?;
+    *core.monitors.lock().unwrap() = monitor_string(&app);
+    Ok(())
+}
+
 /// Right-click → "Make this my main display" in Manage Screens (this computer's screens only).
 #[tauri::command]
 fn make_primary(x: i32, y: i32) -> Result<(), String> {
@@ -173,6 +195,7 @@ fn engines_die_with_us() {
 #[tauri::command]
 fn snapshot(app: Core) -> serde_json::Value {
     let mut v = app.snapshot();
+    v["me"]["screens"] = display::screens();
     v["layout"] = serde_json::to_value(modes::default_positions(&app)).unwrap_or_default();
     v
 }
@@ -449,7 +472,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

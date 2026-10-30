@@ -48,7 +48,7 @@
 
     <section id="workspace" class="view">
       <header class="split"><div><h1>Manage Screens</h1><p class="sub">Drag each device to where it sits on your desk. A tablet you extend to appears as an extra monitor on the side you put it; with Share Input the pointer crosses the edges that touch.</p></div><button class="btn" id="identify" title="Show a big number on each of this computer's screens">Identify screens</button></header>
-      <div id="canvas" class="canvas"><div id="ws-hint" class="ws-hint hidden">Connect another computer or turn on the Android tablet under Nearby Devices and it appears here.</div></div>
+      <div id="canvas" class="canvas"><div id="ws-hint" class="ws-hint hidden">Connect another computer, or add a tablet or phone under Nearby Devices, and it appears here. Right-click a screen to manage it.</div></div>
     </section>
 
     <section id="activity" class="view">
@@ -76,6 +76,7 @@
   <div id="modal" class="modal hidden"></div>
   <div id="toast" class="toast hidden"></div>
   <div id="ctx" class="ctx hidden" role="menu"></div>
+  <div id="keep" class="keep hidden" role="alertdialog"><div><div class="n" style="font-weight:600">Keep these display settings?</div><b class="small"></b></div><button class="btn primary" data-k="keep">Keep</button><button class="btn" data-k="revert">Revert</button></div>
   <script src="app.js"></script>
 </body>
 </html>
