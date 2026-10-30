@@ -116,6 +116,46 @@ mod win {
         attached().iter().any(|d| d.0 == v)
     }
 
+    /// Move a (non-main) display to desktop position (x, y); Windows closes any gap to its neighbours.
+    pub fn move_display(name: &str, x: i32, y: i32) -> Result<()> {
+        if primary_name().as_deref() == Some(name) {
+            bail!("the main display stays where it is; drag the other screens around it");
+        }
+        unsafe {
+            let mut dm: DEVMODEW = zeroed();
+            dm.dmSize = size_of::<DEVMODEW>() as u16;
+            dm.dmFields = DM_POSITION;
+            dm.Anonymous1.Anonymous2.dmPosition.x = x;
+            dm.Anonymous1.Anonymous2.dmPosition.y = y;
+            let n = w(name);
+            let r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+            if r != DISP_CHANGE_SUCCESSFUL {
+                bail!("Windows didn't accept that arrangement ({r})");
+            }
+            ChangeDisplaySettingsExW(std::ptr::null(), std::ptr::null(), std::ptr::null_mut(), 0, std::ptr::null());
+        }
+        Ok(())
+    }
+
+    /// Every display attached to the desktop, for diagnostics.
+    pub fn describe() -> String {
+        let vdd = vdd_display();
+        attached()
+            .iter()
+            .map(|(n, x, y, main)| {
+                let size = unsafe {
+                    let mut dm: DEVMODEW = zeroed();
+                    dm.dmSize = size_of::<DEVMODEW>() as u16;
+                    let nw = w(n);
+                    EnumDisplaySettingsW(nw.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm);
+                    format!("{}x{}@{}", dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayFrequency)
+                };
+                format!("{n} at {x},{y} {size}{}{}", if *main { " main" } else { "" }, if vdd.as_ref() == Some(n) { " (bekdesk virtual screen)" } else { "" })
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Name of the display whose top-left corner is at (x, y).
     pub fn display_at(x: i32, y: i32) -> Option<String> {
         attached().into_iter().find(|d| d.1 == x && d.2 == y).map(|d| d.0)
@@ -285,11 +325,19 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{cursor_pos, display_at, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{cursor_pos, describe, display_at, move_display, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
     None
+}
+#[cfg(not(windows))]
+pub fn move_display(_: &str, _: i32, _: i32) -> Result<()> {
+    anyhow::bail!("arranging screens from bekdesk is available on Windows; use System Settings → Displays")
+}
+#[cfg(not(windows))]
+pub fn describe() -> String {
+    String::new()
 }
 #[cfg(not(windows))]
 pub fn primary_refresh() -> Option<u32> {

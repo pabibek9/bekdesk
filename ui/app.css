@@ -221,3 +221,5 @@ body { animation: appIn .55s var(--spring) both; }
 .spd input { flex: 1; max-width: 220px; accent-color: var(--accent); border: 0; padding: 0; background: none; }
 .spd b { min-width: 42px; color: var(--ink); font-weight: 600; }
 .armed { color: var(--bad) !important; font-weight: 600; }
+.group.me .screen[data-i]:not([data-i="0"]) { cursor: move; }
+.screen.dragging { z-index: 3; box-shadow: 0 0 0 2px var(--accent), 0 12px 24px rgba(0,0,0,.25); }

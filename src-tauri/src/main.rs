@@ -44,17 +44,14 @@ async fn identify_screens(app: tauri::AppHandle, core: Core<'_>) -> Result<(), S
             let _ = net::request(&c, &fp, &net::Req::Identify).await;
         });
     }
-    flash_numbers(&app, &core)
+    flash_numbers(&app)
 }
 
-fn flash_numbers(app: &tauri::AppHandle, core: &App) -> Result<(), String> {
+fn flash_numbers(app: &tauri::AppHandle) -> Result<(), String> {
     let mut screens: Vec<((i32, i32, u32, u32), String)> = real_monitors(app).into_iter().enumerate().map(|(i, m)| (m, (i + 1).to_string())).collect();
+    // The extended tablet or laptop screen is numbered after this computer's own screens, as in Manage Screens.
     if let Some(v) = display::vdd_rect() {
-        let tablet = core.tablet_host.lock().unwrap().as_ref().is_some_and(|s| s.mode == Mode::Extend);
-        let who = if tablet { modes::stream_state(core, "tablet").0.filter(|n| !n.is_empty()).unwrap_or("Tablet".into()) } else {
-            core.sessions.lock().unwrap().iter().find(|(_, s)| s.origin && s.mode == Mode::Extend).map(|(fp, _)| core.peer_name(fp)).unwrap_or("Extended".into())
-        };
-        screens.push((v, who));
+        screens.push((v, (screens.len() + 1).to_string()));
     }
     for (i, ((x, y, mw, mh), text)) in screens.into_iter().enumerate() {
         let label = format!("identify{i}");
@@ -80,6 +77,15 @@ fn flash_numbers(app: &tauri::AppHandle, core: &App) -> Result<(), String> {
             let _ = w.close();
         });
     }
+    Ok(())
+}
+
+/// Manage Screens: one of this computer's screens was dragged to (nx, ny) in desktop pixels.
+#[tauri::command]
+fn move_display(app: tauri::AppHandle, core: Core, x: i32, y: i32, nx: i32, ny: i32) -> Result<(), String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    display::move_display(&name, nx, ny).map_err(|e| format!("{e:#}"))?;
+    *core.monitors.lock().unwrap() = monitor_string(&app);
     Ok(())
 }
 
@@ -401,7 +407,7 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     c.identify.notified().await;
-                    let _ = flash_numbers(&handle, &c);
+                    let _ = flash_numbers(&handle);
                 }
             });
             // Monitors change at runtime (plug/unplug, the virtual monitor); keep the list live.
@@ -443,7 +449,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

@@ -370,7 +370,9 @@ function wsItems() {
   }
   // Shown as live only while it is actually streaming; otherwise greyed out as "Not connected".
   const tsw = S.tablet_state || {};
-  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: tsw.name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: !!tsw.streaming, live: !!tsw.streaming, state: tsw.streaming ? LABEL[S.tablet] : "Not connected" });
+  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: tsw.name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: !!tsw.streaming, live: !!tsw.streaming, state: tsw.streaming ? LABEL[S.tablet] : "Not connected",
+    // Extended, the tablet is the next numbered screen of this PC (same number Identify shows).
+    vnum: S.tablet === "extend" ? monitorsOf(S.me.monitors).length + 1 : 0 });
   for (const it of items) {
     if (!it.mons.length) { it.mons = [[0, 0, it.kind === "laptop" ? 1920 : 2560, it.kind === "laptop" ? 1200 : 1440]]; it.guess = true; }
     it.b = boxOf(it.mons);
@@ -398,9 +400,9 @@ function frameHTML(it) {
   const PW = it.b.w * 10, PH = it.b.h * 10;
   const screens = it.mons.map((m, i) => {
     const l = ((m[0] - it.b.x0) / PW) * 100, t = ((m[1] - it.b.y0) / PH) * 100, w = (m[2] / PW) * 100, h = (m[3] / PH) * 100;
-    const tag = it.kind === "tablet" ? "" : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}</span>`;
+    const tag = it.kind === "tablet" ? (it.vnum ? `<span class="num">${it.vnum}</span>` : "") : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}</span>`;
     const stand = it.kind === "desktop" ? `<span class="neck"></span><span class="foot"></span>` : "";
-    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-i="${i}"` : "";
+    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-w="${m[2]}" data-h="${m[3]}" data-i="${i}"` : "";
     return `<div class="screen ${it.kind}"${pos} style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"><i></i>${tag}<span class="res">${m[2]}×${m[3]}${it.guess ? "?" : ""}</span>${stand}</div>`;
   }).join("");
   const base = it.kind === "laptop" ? `<span class="kbd"></span>` : "";
@@ -438,8 +440,9 @@ function renderWorkspace() {
     }
     g.className = `group k-${it.kind} ${it.me ? "me" : ""} ${it.online === false ? "offline" : ""} ${g._seen ? "" : "pop"}`;
     g._seen = true;
-    g._l = W / 2 + (it.p.x - cx) * scale; g._t = H / 2 - 20 + (it.p.y - cy) * scale; g._w = it.b.w * scale; g._h = it.b.h * scale;
-    Object.assign(g.style, { left: g._l + "px", top: g._t + "px", width: g._w + "px", height: g._h + "px" });
+    g._l = W / 2 + (it.p.x - cx) * scale; g._t = H / 2 - 20 + (it.p.y - cy) * scale; g._w = it.b.w * scale; g._ht = it.b.h * scale;
+    Object.assign(g.style, { left: g._l + "px", top: g._t + "px", width: g._w + "px", height: g._ht + "px" });
+    g._b = it.b;
     setHTML(g, frameHTML(it));
   }
   for (const [k, g] of groups) if (!keep.has(k)) { g.remove(); groups.delete(k); }
@@ -475,6 +478,14 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCtx();
 $("#canvas").addEventListener("pointerdown", (e) => {
   const g = e.target.closest(".group");
   if (!g || e.button !== 0) return;
+  // One of this PC's other screens (e.g. an HDMI monitor): move just that screen, as in Windows display settings.
+  const sc = e.target.closest(".group.me .screen");
+  if (sc && sc.dataset.i !== "0") {
+    sc.setPointerCapture(e.pointerId);
+    dragging = { mon: sc, g, sx: e.clientX, sy: e.clientY, l: sc.offsetLeft, t: sc.offsetTop, moved: false };
+    sc.classList.add("dragging");
+    return;
+  }
   g.setPointerCapture(e.pointerId);
   dragging = { g, sx: e.clientX, sy: e.clientY, l: g._l, t: g._t, moved: false };
   g.classList.add("dragging");
@@ -483,11 +494,47 @@ $("#canvas").addEventListener("pointerdown", (e) => {
 $("#canvas").addEventListener("pointermove", (e) => {
   if (!dragging) return;
   dragging.moved = true;
+  if (dragging.mon) {
+    dragging.mon.style.left = dragging.l + e.clientX - dragging.sx + "px";
+    dragging.mon.style.top = dragging.t + e.clientY - dragging.sy + "px";
+    return;
+  }
   dragging.g.style.left = dragging.l + e.clientX - dragging.sx + "px";
   dragging.g.style.top = dragging.t + e.clientY - dragging.sy + "px";
 });
+async function endMonitorDrag({ mon, g, moved }) {
+  dragging = null;
+  mon.classList.remove("dragging");
+  if (!moved) return;
+  // Snap flush against the nearest edge of another of this PC's screens, aligning edges when close.
+  let l = mon.offsetLeft, t = mon.offsetTop, best = null;
+  for (const o of g.querySelectorAll(".screen")) {
+    if (o === mon) continue;
+    const top = Math.abs(t - o.offsetTop) < 20 ? o.offsetTop : t, left = Math.abs(l - o.offsetLeft) < 20 ? o.offsetLeft : l;
+    for (const [x, y] of [[o.offsetLeft + o.offsetWidth, top], [o.offsetLeft - mon.offsetWidth, top], [left, o.offsetTop + o.offsetHeight], [left, o.offsetTop - mon.offsetHeight]]) {
+      const d = Math.hypot(x - l, y - t);
+      if (!best || d < best.d) best = { x, y, d };
+    }
+  }
+  if (best) { l = best.x; t = best.y; }
+  const k = (g._b.w * 10) / g.offsetWidth; // desktop pixels per canvas pixel
+  let nx = Math.round(g._b.x0 + l * k), ny = Math.round(g._b.y0 + t * k);
+  // Canvas rounding leaves a few pixels off; land exactly on the other screens' edges.
+  const [w, h] = [+mon.dataset.w, +mon.dataset.h];
+  const snap = (v, size, edges) => edges.flatMap((e) => [e, e - size]).reduce((b, c) => (Math.abs(c - v) < Math.abs(b - v) ? c : b), Infinity);
+  const others = [...g.querySelectorAll(".screen")].filter((o) => o !== mon).map((o) => o.dataset);
+  const sx = snap(nx, w, others.flatMap((o) => [+o.x, +o.x + +o.w])), sy = snap(ny, h, others.flatMap((o) => [+o.y, +o.y + +o.h]));
+  if (Math.abs(sx - nx) < 40) nx = sx;
+  if (Math.abs(sy - ny) < 40) ny = sy;
+  try {
+    await call("move_display", { x: +mon.dataset.x, y: +mon.dataset.y, nx, ny });
+  } catch (_) {}
+  g._h = null; // redraw this PC from the real arrangement, whether or not Windows accepted it
+  refresh();
+}
 async function endDrag() {
   if (!dragging) return;
+  if (dragging.mon) return endMonitorDrag(dragging);
   const { g, moved } = dragging;
   g.classList.remove("dragging");
   if (!moved) { dragging = null; return; }
@@ -498,7 +545,7 @@ async function endDrag() {
   for (const o of groups.values()) {
     if (o === g) continue;
     const top = Math.abs(gt - o._t) < 30 ? o._t : gt, left = Math.abs(gl - o._l) < 30 ? o._l : gl;
-    for (const [x, y] of [[o._l + o._w, top], [o._l - g._w, top], [left, o._t + o._h], [left, o._t - g._h]]) {
+    for (const [x, y] of [[o._l + o._w, top], [o._l - g._w, top], [left, o._t + o._ht], [left, o._t - g._ht]]) {
       const dist = Math.hypot(x - gl, y - gt);
       if (!best || dist < best.dist) best = { x, y, dist };
     }
