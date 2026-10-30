@@ -44,17 +44,14 @@ async fn identify_screens(app: tauri::AppHandle, core: Core<'_>) -> Result<(), S
             let _ = net::request(&c, &fp, &net::Req::Identify).await;
         });
     }
-    flash_numbers(&app, &core)
+    flash_numbers(&app)
 }
 
-fn flash_numbers(app: &tauri::AppHandle, core: &App) -> Result<(), String> {
+fn flash_numbers(app: &tauri::AppHandle) -> Result<(), String> {
     let mut screens: Vec<((i32, i32, u32, u32), String)> = real_monitors(app).into_iter().enumerate().map(|(i, m)| (m, (i + 1).to_string())).collect();
+    // The extended tablet or laptop screen is numbered after this computer's own screens, as in Manage Screens.
     if let Some(v) = display::vdd_rect() {
-        let tablet = core.tablet_host.lock().unwrap().as_ref().is_some_and(|s| s.mode == Mode::Extend);
-        let who = if tablet { modes::stream_state(core, "tablet").0.filter(|n| !n.is_empty()).unwrap_or("Tablet".into()) } else {
-            core.sessions.lock().unwrap().iter().find(|(_, s)| s.origin && s.mode == Mode::Extend).map(|(fp, _)| core.peer_name(fp)).unwrap_or("Extended".into())
-        };
-        screens.push((v, who));
+        screens.push((v, (screens.len() + 1).to_string()));
     }
     for (i, ((x, y, mw, mh), text)) in screens.into_iter().enumerate() {
         let label = format!("identify{i}");
@@ -80,6 +77,37 @@ fn flash_numbers(app: &tauri::AppHandle, core: &App) -> Result<(), String> {
             let _ = w.close();
         });
     }
+    Ok(())
+}
+
+/// Manage Screens: one of this computer's screens was dragged to (nx, ny) in desktop pixels.
+#[tauri::command]
+fn move_display(app: tauri::AppHandle, core: Core, x: i32, y: i32, nx: i32, ny: i32) -> Result<(), String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    display::move_display(&name, nx, ny).map_err(|e| format!("{e:#}"))?;
+    *core.monitors.lock().unwrap() = monitor_string(&app);
+    Ok(())
+}
+
+/// Manage Screens right-click menu: what the screen at (x, y) supports and is set to now.
+#[tauri::command]
+fn display_modes(x: i32, y: i32) -> Result<serde_json::Value, String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    Ok(serde_json::json!({"modes": display::modes(&name)}))
+}
+
+/// Resolution/refresh (`w`, `h`, `hz`), rotation (`orientation` 0-3) or turn off (`off`) for the screen at (x, y).
+#[tauri::command]
+fn change_display(app: tauri::AppHandle, core: Core, x: i32, y: i32, w: Option<u32>, h: Option<u32>, hz: Option<u32>, orientation: Option<u32>, off: Option<bool>) -> Result<(), String> {
+    let name = display::display_at(x, y).ok_or("that screen isn't connected any more")?;
+    let r = match (w, h, hz, orientation, off) {
+        (_, _, _, _, Some(true)) => display::turn_off(&name),
+        (_, _, _, Some(o), _) => display::rotate(&name, o.min(3)),
+        (Some(w), Some(h), Some(hz), _, _) => display::set_resolution(&name, w, h, hz),
+        _ => return Err("nothing to change".into()),
+    };
+    r.map_err(|e| format!("{e:#}"))?;
+    *core.monitors.lock().unwrap() = monitor_string(&app);
     Ok(())
 }
 
@@ -167,6 +195,7 @@ fn engines_die_with_us() {
 #[tauri::command]
 fn snapshot(app: Core) -> serde_json::Value {
     let mut v = app.snapshot();
+    v["me"]["screens"] = display::screens();
     v["layout"] = serde_json::to_value(modes::default_positions(&app)).unwrap_or_default();
     v
 }
@@ -401,7 +430,7 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     c.identify.notified().await;
-                    let _ = flash_numbers(&handle, &c);
+                    let _ = flash_numbers(&handle);
                 }
             });
             // Monitors change at runtime (plug/unplug, the virtual monitor); keep the list live.
@@ -443,7 +472,7 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

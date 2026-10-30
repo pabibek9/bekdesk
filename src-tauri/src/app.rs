@@ -344,6 +344,8 @@ impl App {
             o.remove("log");
         }
         out += &serde_json::to_string_pretty(&snap).unwrap_or_default();
+        out += "\n\n== displays ==\n";
+        out += &crate::display::describe();
         out += "\n\n== bekdesk log ==\n";
         out += &self.log.lock().unwrap().iter().rev().take(80).rev().cloned().collect::<Vec<_>>().join("\n");
         let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(self.dir.join("logs")).into_iter().flatten().flatten().map(|e| e.path()).collect();

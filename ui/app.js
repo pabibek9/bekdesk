@@ -370,7 +370,9 @@ function wsItems() {
   }
   // Shown as live only while it is actually streaming; otherwise greyed out as "Not connected".
   const tsw = S.tablet_state || {};
-  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: tsw.name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: !!tsw.streaming, live: !!tsw.streaming, state: tsw.streaming ? LABEL[S.tablet] : "Not connected" });
+  if (S.tablet && S.tablet !== "off") items.push({ key: "tablet", name: tsw.name || "Tablet or phone", os: "android", kind: "tablet", mons: resMon(S.tablet_res, [[0, 0, 2560, 1600]]), online: !!tsw.streaming, live: !!tsw.streaming, state: tsw.streaming ? LABEL[S.tablet] : "Not connected",
+    // Extended, the tablet is the next numbered screen of this PC (same number Identify shows).
+    vnum: S.tablet === "extend" ? monitorsOf(S.me.monitors).length + 1 : 0 });
   for (const it of items) {
     if (!it.mons.length) { it.mons = [[0, 0, it.kind === "laptop" ? 1920 : 2560, it.kind === "laptop" ? 1200 : 1440]]; it.guess = true; }
     it.b = boxOf(it.mons);
@@ -393,14 +395,19 @@ function wsItems() {
   return items;
 }
 
+// Windows' details (connection, monitor name, refresh, rotation) for this PC's screen whose corner is at (x, y).
+const screenAt = (x, y) => (S.me.screens || []).find((d) => d.x === x && d.y === y);
+
 // Screens are sized in percent of their group, so resizing the window only animates the group box.
 function frameHTML(it) {
   const PW = it.b.w * 10, PH = it.b.h * 10;
   const screens = it.mons.map((m, i) => {
     const l = ((m[0] - it.b.x0) / PW) * 100, t = ((m[1] - it.b.y0) / PH) * 100, w = (m[2] / PW) * 100, h = (m[3] / PH) * 100;
-    const tag = it.kind === "tablet" ? "" : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}</span>`;
+    const info = it.me ? screenAt(m[0], m[1]) : null;
+    const conn = info && info.conn && info.conn !== "Other" ? `<em class="conn">${esc(info.conn)}</em>` : "";
+    const tag = it.kind === "tablet" ? (it.vnum ? `<span class="num">${it.vnum}</span>` : "") : `<span class="num">${i + 1}${i === 0 ? '<em>Main</em>' : ""}${conn}</span>`;
     const stand = it.kind === "desktop" ? `<span class="neck"></span><span class="foot"></span>` : "";
-    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-i="${i}"` : "";
+    const pos = it.me ? ` data-x="${m[0]}" data-y="${m[1]}" data-w="${m[2]}" data-h="${m[3]}" data-i="${i}" title="${esc(info && info.label || "")}"` : "";
     return `<div class="screen ${it.kind}"${pos} style="left:${l}%;top:${t}%;width:${w}%;height:${h}%"><i></i>${tag}<span class="res">${m[2]}×${m[3]}${it.guess ? "?" : ""}</span>${stand}</div>`;
   }).join("");
   const base = it.kind === "laptop" ? `<span class="kbd"></span>` : "";
@@ -438,8 +445,9 @@ function renderWorkspace() {
     }
     g.className = `group k-${it.kind} ${it.me ? "me" : ""} ${it.online === false ? "offline" : ""} ${g._seen ? "" : "pop"}`;
     g._seen = true;
-    g._l = W / 2 + (it.p.x - cx) * scale; g._t = H / 2 - 20 + (it.p.y - cy) * scale; g._w = it.b.w * scale; g._h = it.b.h * scale;
-    Object.assign(g.style, { left: g._l + "px", top: g._t + "px", width: g._w + "px", height: g._h + "px" });
+    g._l = W / 2 + (it.p.x - cx) * scale; g._t = H / 2 - 20 + (it.p.y - cy) * scale; g._w = it.b.w * scale; g._ht = it.b.h * scale;
+    Object.assign(g.style, { left: g._l + "px", top: g._t + "px", width: g._w + "px", height: g._ht + "px" });
+    g._b = it.b;
     setHTML(g, frameHTML(it));
   }
   for (const [k, g] of groups) if (!keep.has(k)) { g.remove(); groups.delete(k); }
@@ -449,32 +457,84 @@ function renderWorkspace() {
 $("#identify").addEventListener("click", () => call("identify_screens"));
 // Right-click one of this computer's screens: make it the main display, identify, or open display settings.
 function hideCtx() { $("#ctx").classList.add("hidden"); }
+// Resolution list for one screen, inside the same menu.
+async function showModes(at, info) {
+  const m = $("#ctx");
+  m.innerHTML = `<div class="ctx-h"><b>Resolution &amp; refresh rate</b><span>Now ${info.w}×${info.h} · ${info.hz} Hz</span></div><div class="ctx-list">Loading…</div>`;
+  try {
+    const { modes } = await invoke("display_modes", at);
+    const sideways = info.orientation % 2 === 1;
+    m.querySelector(".ctx-list").innerHTML = modes.map(([w, h, hz]) => {
+      const now = (sideways ? h === info.w && w === info.h : w === info.w && h === info.h) && hz === info.hz;
+      return `<button data-act="mode" data-w="${w}" data-h="${h}" data-hz="${hz}" class="${now ? "on" : ""}">${w} × ${h} <span>${hz} Hz</span></button>`;
+    }).join("") || "No other modes";
+  } catch (e) { m.querySelector(".ctx-list").textContent = String(e); }
+}
+// Display changes can leave a monitor black; like Windows, undo them unless the user confirms within 15 seconds.
+async function changeAndConfirm(at, change, undo) {
+  try { await call("change_display", { ...at, ...change }); } catch (_) { return; }
+  refresh();
+  const k = $("#keep");
+  let left = 15;
+  const tick = () => { k.querySelector("b").textContent = `Reverting in ${left} s`; };
+  tick();
+  k.classList.remove("hidden");
+  const done = (keep) => {
+    clearInterval(t);
+    k.classList.add("hidden");
+    if (!keep) call("change_display", { ...at, ...undo }).then(refresh, () => {});
+  };
+  const t = setInterval(() => { if (--left <= 0) done(false); else tick(); }, 1000);
+  k.querySelector("[data-k=keep]").onclick = () => done(true);
+  k.querySelector("[data-k=revert]").onclick = () => done(false);
+}
 $("#canvas").addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const sc = e.target.closest(".group.me .screen");
   const m = $("#ctx");
   const main = sc && sc.dataset.i === "0";
-  m.innerHTML = (sc ? `<button data-act="primary" ${main ? "disabled" : ""}>${main ? "This is the main display" : `Make screen ${+sc.dataset.i + 1} the main display`}</button>` : "")
+  const info = sc && screenAt(+sc.dataset.x, +sc.dataset.y);
+  const head = info ? `<div class="ctx-h"><b>Screen ${+sc.dataset.i + 1}${info.label ? " · " + esc(info.label) : ""}</b><span>${esc(info.conn)} · ${info.w}×${info.h} · ${info.hz} Hz</span></div>` : "";
+  m.innerHTML = head + (sc ? `<button data-act="primary" ${main ? "disabled" : ""}>${main ? "This is the main display" : `Make screen ${+sc.dataset.i + 1} the main display`}</button>` : "")
+    + (info ? `<button data-act="modes">Resolution &amp; refresh rate…</button>
+      <div class="ctx-row">Rotate ${["Landscape", "Portrait", "Landscape (flipped)", "Portrait (flipped)"].map((t, o) => `<button data-act="rotate" data-o="${o}" class="${info.orientation === o ? "on" : ""}" title="${t}">${["▭", "▯", "▭↻", "▯↻"][o]}</button>`).join("")}</div>
+      ${main ? "" : `<button data-act="off">Turn off this screen</button>`}` : "")
     + `<button data-act="identify">Identify screens</button><button data-act="settings">Display settings…</button>`;
   m._sc = sc;
   m.style.left = Math.min(e.clientX, innerWidth - 260) + "px";
-  m.style.top = Math.min(e.clientY, innerHeight - 140) + "px";
+  m.style.top = Math.min(e.clientY, innerHeight - 300) + "px";
   m.classList.remove("hidden");
 });
 $("#ctx").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
   if (!b || b.disabled) return;
-  const sc = $("#ctx")._sc;
+  const sc = $("#ctx")._sc, at = sc && { x: +sc.dataset.x, y: +sc.dataset.y }, info = sc && screenAt(at.x, at.y);
+  if (b.dataset.act === "modes") return showModes(at, info);
   hideCtx();
-  if (b.dataset.act === "primary") { await call("make_primary", { x: +sc.dataset.x, y: +sc.dataset.y }); toast("Main display changed"); }
+  if (b.dataset.act === "primary") { await call("make_primary", at); toast("Main display changed"); }
+  if (b.dataset.act === "mode") return changeAndConfirm(at, { w: +b.dataset.w, h: +b.dataset.h, hz: +b.dataset.hz }, { w: info.w, h: info.h, hz: info.hz });
+  if (b.dataset.act === "rotate") return changeAndConfirm(at, { orientation: +b.dataset.o }, { orientation: info.orientation });
+  if (b.dataset.act === "off") {
+    if (!armed(b, "Press again to turn off")) { $("#ctx").classList.remove("hidden"); return; }
+    await call("change_display", { ...at, off: true }); toast("Screen turned off. Win+P → Extend turns it back on."); refresh();
+  }
   if (b.dataset.act === "identify") call("identify_screens");
   if (b.dataset.act === "settings") invoke("open_display_settings");
 });
-document.addEventListener("click", (e) => { if (!e.target.closest("#ctx")) hideCtx(); });
+// A click that rebuilt the menu (e.g. opening the resolution list) leaves its target detached: not an outside click.
+document.addEventListener("click", (e) => { if (e.target.isConnected && !e.target.closest("#ctx")) hideCtx(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCtx(); });
 $("#canvas").addEventListener("pointerdown", (e) => {
   const g = e.target.closest(".group");
   if (!g || e.button !== 0) return;
+  // One of this PC's other screens (e.g. an HDMI monitor): move just that screen, as in Windows display settings.
+  const sc = e.target.closest(".group.me .screen");
+  if (sc && sc.dataset.i !== "0") {
+    sc.setPointerCapture(e.pointerId);
+    dragging = { mon: sc, g, sx: e.clientX, sy: e.clientY, l: sc.offsetLeft, t: sc.offsetTop, moved: false };
+    sc.classList.add("dragging");
+    return;
+  }
   g.setPointerCapture(e.pointerId);
   dragging = { g, sx: e.clientX, sy: e.clientY, l: g._l, t: g._t, moved: false };
   g.classList.add("dragging");
@@ -483,11 +543,47 @@ $("#canvas").addEventListener("pointerdown", (e) => {
 $("#canvas").addEventListener("pointermove", (e) => {
   if (!dragging) return;
   dragging.moved = true;
+  if (dragging.mon) {
+    dragging.mon.style.left = dragging.l + e.clientX - dragging.sx + "px";
+    dragging.mon.style.top = dragging.t + e.clientY - dragging.sy + "px";
+    return;
+  }
   dragging.g.style.left = dragging.l + e.clientX - dragging.sx + "px";
   dragging.g.style.top = dragging.t + e.clientY - dragging.sy + "px";
 });
+async function endMonitorDrag({ mon, g, moved }) {
+  dragging = null;
+  mon.classList.remove("dragging");
+  if (!moved) return;
+  // Snap flush against the nearest edge of another of this PC's screens, aligning edges when close.
+  let l = mon.offsetLeft, t = mon.offsetTop, best = null;
+  for (const o of g.querySelectorAll(".screen")) {
+    if (o === mon) continue;
+    const top = Math.abs(t - o.offsetTop) < 20 ? o.offsetTop : t, left = Math.abs(l - o.offsetLeft) < 20 ? o.offsetLeft : l;
+    for (const [x, y] of [[o.offsetLeft + o.offsetWidth, top], [o.offsetLeft - mon.offsetWidth, top], [left, o.offsetTop + o.offsetHeight], [left, o.offsetTop - mon.offsetHeight]]) {
+      const d = Math.hypot(x - l, y - t);
+      if (!best || d < best.d) best = { x, y, d };
+    }
+  }
+  if (best) { l = best.x; t = best.y; }
+  const k = (g._b.w * 10) / g.offsetWidth; // desktop pixels per canvas pixel
+  let nx = Math.round(g._b.x0 + l * k), ny = Math.round(g._b.y0 + t * k);
+  // Canvas rounding leaves a few pixels off; land exactly on the other screens' edges.
+  const [w, h] = [+mon.dataset.w, +mon.dataset.h];
+  const snap = (v, size, edges) => edges.flatMap((e) => [e, e - size]).reduce((b, c) => (Math.abs(c - v) < Math.abs(b - v) ? c : b), Infinity);
+  const others = [...g.querySelectorAll(".screen")].filter((o) => o !== mon).map((o) => o.dataset);
+  const sx = snap(nx, w, others.flatMap((o) => [+o.x, +o.x + +o.w])), sy = snap(ny, h, others.flatMap((o) => [+o.y, +o.y + +o.h]));
+  if (Math.abs(sx - nx) < 40) nx = sx;
+  if (Math.abs(sy - ny) < 40) ny = sy;
+  try {
+    await call("move_display", { x: +mon.dataset.x, y: +mon.dataset.y, nx, ny });
+  } catch (_) {}
+  g._h = null; // redraw this PC from the real arrangement, whether or not Windows accepted it
+  refresh();
+}
 async function endDrag() {
   if (!dragging) return;
+  if (dragging.mon) return endMonitorDrag(dragging);
   const { g, moved } = dragging;
   g.classList.remove("dragging");
   if (!moved) { dragging = null; return; }
@@ -498,7 +594,7 @@ async function endDrag() {
   for (const o of groups.values()) {
     if (o === g) continue;
     const top = Math.abs(gt - o._t) < 30 ? o._t : gt, left = Math.abs(gl - o._l) < 30 ? o._l : gl;
-    for (const [x, y] of [[o._l + o._w, top], [o._l - g._w, top], [left, o._t + o._h], [left, o._t - g._h]]) {
+    for (const [x, y] of [[o._l + o._w, top], [o._l - g._w, top], [left, o._t + o._ht], [left, o._t - g._ht]]) {
       const dist = Math.hypot(x - gl, y - gt);
       if (!best || dist < best.dist) best = { x, y, dist };
     }

@@ -116,6 +116,185 @@ mod win {
         attached().iter().any(|d| d.0 == v)
     }
 
+    /// Move a (non-main) display to desktop position (x, y); Windows closes any gap to its neighbours.
+    pub fn move_display(name: &str, x: i32, y: i32) -> Result<()> {
+        if primary_name().as_deref() == Some(name) {
+            bail!("the main display stays where it is; drag the other screens around it");
+        }
+        unsafe {
+            let mut dm: DEVMODEW = zeroed();
+            dm.dmSize = size_of::<DEVMODEW>() as u16;
+            dm.dmFields = DM_POSITION;
+            dm.Anonymous1.Anonymous2.dmPosition.x = x;
+            dm.Anonymous1.Anonymous2.dmPosition.y = y;
+            let n = w(name);
+            let r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+            if r != DISP_CHANGE_SUCCESSFUL {
+                bail!("Windows didn't accept that arrangement ({r})");
+            }
+            ChangeDisplaySettingsExW(std::ptr::null(), std::ptr::null(), std::ptr::null_mut(), 0, std::ptr::null());
+        }
+        Ok(())
+    }
+
+    /// How each active screen is connected and what the monitor calls itself: (`\\.\DISPLAYn`, connection, name).
+    fn connections() -> Vec<(String, &'static str, String)> {
+        use windows_sys::Win32::Devices::Display::*;
+        unsafe {
+            let (mut np, mut nm) = (0u32, 0u32);
+            if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut np, &mut nm) != 0 {
+                return vec![];
+            }
+            let mut paths = vec![zeroed::<DISPLAYCONFIG_PATH_INFO>(); np as usize];
+            let mut modes = vec![zeroed::<DISPLAYCONFIG_MODE_INFO>(); nm as usize];
+            if QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &mut np, paths.as_mut_ptr(), &mut nm, modes.as_mut_ptr(), std::ptr::null_mut()) != 0 {
+                return vec![];
+            }
+            paths.truncate(np as usize);
+            paths
+                .iter()
+                .map(|p| {
+                    let mut src: DISPLAYCONFIG_SOURCE_DEVICE_NAME = zeroed();
+                    src.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+                    src.header.size = size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
+                    src.header.adapterId = p.sourceInfo.adapterId;
+                    src.header.id = p.sourceInfo.id;
+                    DisplayConfigGetDeviceInfo(&mut src.header);
+                    let mut tgt: DISPLAYCONFIG_TARGET_DEVICE_NAME = zeroed();
+                    tgt.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+                    tgt.header.size = size_of::<DISPLAYCONFIG_TARGET_DEVICE_NAME>() as u32;
+                    tgt.header.adapterId = p.targetInfo.adapterId;
+                    tgt.header.id = p.targetInfo.id;
+                    DisplayConfigGetDeviceInfo(&mut tgt.header);
+                    let conn = match p.targetInfo.outputTechnology {
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI => "HDMI",
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL => "DisplayPort",
+                        18 => "USB-C", // DisplayPort tunnelled over USB-C (newer constant than windows-sys 0.59)
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI => "DVI",
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HD15 => "VGA",
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_MIRACAST => "Wireless",
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED | DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_VIRTUAL => "Virtual",
+                        DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL
+                        | DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED
+                        | DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS
+                        | DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED => "Built-in",
+                        _ => "Other",
+                    };
+                    (s(&src.viewGdiDeviceName), conn, s(&tgt.monitorFriendlyDeviceName))
+                })
+                .collect()
+        }
+    }
+
+    fn current(name: &str) -> Option<DEVMODEW> {
+        unsafe {
+            let mut dm: DEVMODEW = zeroed();
+            dm.dmSize = size_of::<DEVMODEW>() as u16;
+            let n = w(name);
+            (EnumDisplaySettingsW(n.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0).then_some(dm)
+        }
+    }
+
+    /// This computer's active screens for Manage Screens: position, size, refresh, connection and monitor name.
+    pub fn screens() -> serde_json::Value {
+        let conns = connections();
+        let vdd = vdd_display();
+        attached()
+            .into_iter()
+            .filter_map(|(n, x, y, main)| {
+                let dm = current(&n)?;
+                let c: Vec<&(String, &str, String)> = conns.iter().filter(|c| c.0 == n).collect();
+                let conn = c.first().map(|c| c.1).unwrap_or("Other");
+                let label = c.iter().map(|c| c.2.as_str()).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" + ");
+                Some(serde_json::json!({"name": n, "x": x, "y": y, "w": dm.dmPelsWidth, "h": dm.dmPelsHeight, "hz": dm.dmDisplayFrequency,
+                    "main": main, "conn": if vdd.as_ref() == Some(&n) { "bekdesk" } else { conn }, "label": label,
+                    "orientation": unsafe { dm.Anonymous1.Anonymous2.dmDisplayOrientation }}))
+            })
+            .collect()
+    }
+
+    /// Resolutions and refresh rates a screen supports (width, height, Hz), largest first.
+    pub fn modes(name: &str) -> Vec<(u32, u32, u32)> {
+        let n = w(name);
+        let mut out = vec![];
+        unsafe {
+            let mut i = 0;
+            loop {
+                let mut dm: DEVMODEW = zeroed();
+                dm.dmSize = size_of::<DEVMODEW>() as u16;
+                if EnumDisplaySettingsW(n.as_ptr(), i, &mut dm) == 0 {
+                    break;
+                }
+                i += 1;
+                if dm.dmBitsPerPel >= 24 && dm.dmDisplayFrequency > 1 {
+                    out.push((dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayFrequency));
+                }
+            }
+        }
+        out.sort_by(|a, b| (b.0 * b.1, b.2).cmp(&(a.0 * a.1, a.2)));
+        out.dedup();
+        out
+    }
+
+    fn apply(name: &str, dm: &DEVMODEW) -> Result<()> {
+        let n = w(name);
+        let r = unsafe { ChangeDisplaySettingsExW(n.as_ptr(), dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY, std::ptr::null()) };
+        if r != DISP_CHANGE_SUCCESSFUL {
+            bail!("Windows didn't accept that setting ({r})");
+        }
+        Ok(())
+    }
+
+    /// Change a screen's resolution and refresh rate.
+    pub fn set_resolution(name: &str, width: u32, height: u32, hz: u32) -> Result<()> {
+        let mut dm = current(name).context("screen not found")?;
+        dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+        // Rotated sideways, Windows expects the size in the rotated (tall) form.
+        let sideways = unsafe { dm.Anonymous1.Anonymous2.dmDisplayOrientation } % 2 == 1;
+        (dm.dmPelsWidth, dm.dmPelsHeight) = if sideways { (height, width) } else { (width, height) };
+        dm.dmDisplayFrequency = hz;
+        apply(name, &dm)
+    }
+
+    /// Rotate a screen: 0 landscape, 1 portrait, 2 landscape (flipped), 3 portrait (flipped).
+    pub fn rotate(name: &str, orientation: u32) -> Result<()> {
+        let mut dm = current(name).context("screen not found")?;
+        let cur = unsafe { dm.Anonymous1.Anonymous2.dmDisplayOrientation };
+        if cur % 2 != orientation % 2 {
+            std::mem::swap(&mut dm.dmPelsWidth, &mut dm.dmPelsHeight);
+        }
+        dm.Anonymous1.Anonymous2.dmDisplayOrientation = orientation;
+        dm.dmFields = DM_DISPLAYORIENTATION | DM_PELSWIDTH | DM_PELSHEIGHT;
+        apply(name, &dm)
+    }
+
+    /// Turn a screen off (Windows stops using it until it is turned on again in display settings or by Win+P).
+    pub fn turn_off(name: &str) -> Result<()> {
+        if primary_name().as_deref() == Some(name) {
+            bail!("the main display can't be turned off; make another screen the main one first");
+        }
+        set_mode(name, 0, 0, 0, 0)
+    }
+
+    /// Every display attached to the desktop, for diagnostics.
+    pub fn describe() -> String {
+        let vdd = vdd_display();
+        attached()
+            .iter()
+            .map(|(n, x, y, main)| {
+                let size = unsafe {
+                    let mut dm: DEVMODEW = zeroed();
+                    dm.dmSize = size_of::<DEVMODEW>() as u16;
+                    let nw = w(n);
+                    EnumDisplaySettingsW(nw.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm);
+                    format!("{}x{}@{}", dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayFrequency)
+                };
+                format!("{n} at {x},{y} {size}{}{}", if *main { " main" } else { "" }, if vdd.as_ref() == Some(n) { " (bekdesk virtual screen)" } else { "" })
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// Name of the display whose top-left corner is at (x, y).
     pub fn display_at(x: i32, y: i32) -> Option<String> {
         attached().into_iter().find(|d| d.1 == x && d.2 == y).map(|d| d.0)
@@ -285,11 +464,39 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{cursor_pos, display_at, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{cursor_pos, describe, modes, rotate, screens, set_resolution, turn_off, display_at, move_display, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
     None
+}
+#[cfg(not(windows))]
+pub fn move_display(_: &str, _: i32, _: i32) -> Result<()> {
+    anyhow::bail!("arranging screens from bekdesk is available on Windows; use System Settings → Displays")
+}
+#[cfg(not(windows))]
+pub fn screens() -> serde_json::Value {
+    serde_json::json!([])
+}
+#[cfg(not(windows))]
+pub fn modes(_: &str) -> Vec<(u32, u32, u32)> {
+    vec![]
+}
+#[cfg(not(windows))]
+pub fn set_resolution(_: &str, _: u32, _: u32, _: u32) -> Result<()> {
+    anyhow::bail!("use System Settings → Displays")
+}
+#[cfg(not(windows))]
+pub fn rotate(_: &str, _: u32) -> Result<()> {
+    anyhow::bail!("use System Settings → Displays")
+}
+#[cfg(not(windows))]
+pub fn turn_off(_: &str) -> Result<()> {
+    anyhow::bail!("use System Settings → Displays")
+}
+#[cfg(not(windows))]
+pub fn describe() -> String {
+    String::new()
 }
 #[cfg(not(windows))]
 pub fn primary_refresh() -> Option<u32> {

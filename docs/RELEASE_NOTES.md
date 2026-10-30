@@ -1,3 +1,14 @@
+## bekdesk 0.1.13 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Arrange your own screens in Manage Screens:** drag a second screen of this PC (e.g. an HDMI monitor) next to, above or below the main one, like in Windows display settings; bekdesk applies it to Windows and snaps it exactly to the edge. The main screen stays put (drag it to move the whole PC).
+- **See and manage every screen:** each of this PC's screens shows how it's connected (Built-in, HDMI, DisplayPort, USB-C, VGA, Wireless) and the monitor's name on hover. Right-click a screen to change its **resolution and refresh rate**, **rotate** it, **turn it off**, make it the main display, identify screens, or open Windows display settings. Like Windows, a resolution or rotation change is undone after 15 seconds unless you press **Keep**, so a monitor that goes black fixes itself.
+- **Identify shows numbers, not names:** every screen gets 1, 2, 3…; a tablet you extend to is the next number after this PC's own screens, and Manage Screens shows the same number on it.
+- **Copy diagnostics now lists every display Windows has active** (position, size, refresh, which is main, and which is bekdesk's virtual screen), so an unexpected extra display can be pinned down.
+- Fix: snapping a device above or below another in Manage Screens used the wrong height.
+
 ## bekdesk 0.1.12 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
