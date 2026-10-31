@@ -160,6 +160,16 @@ fn extract(file: &Path, dir: &Path) -> Result<()> {
                 std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
             }
         }
+        // Linux viewer: Moonlight's AppImage runs as is (main() makes AppImages run without FUSE).
+        "AppImage" => {
+            let exe = dir.join("moonlight.AppImage");
+            std::fs::copy(file, &exe)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755))?;
+            }
+        }
         _ => bail!("unsupported package {}", file.display()),
     }
     Ok(())

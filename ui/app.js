@@ -100,13 +100,9 @@ function entities() {
     else if (ses) pill = ["wait", "Connecting…"];
     else if (!d.online) pill = ["off", "Offline"];
     else pill = ["ready", d.trusted || d.once ? "Ready" : "Not paired"];
-    // What this computer and that one can do (Linux: Share Input, clipboard and files for now).
-    const peerLinux = d.os === "linux";
-    const no = {
-      input: has("deskflow") ? "" : "Not available on this computer yet",
-      extend: !has("sunshine") ? "Showing this screen isn't available on Linux yet" : peerLinux ? `${d.name || "It"} runs Linux: it can't show other screens yet` : "",
-      mirror: !has("sunshine") ? "Showing this screen isn't available on Linux yet" : peerLinux ? `${d.name || "It"} runs Linux: it can't show other screens yet` : "",
-    };
+    // What this computer can do (Linux can't share its own screen yet, but can show another computer's).
+    const host = has("sunshine") ? "" : "Sharing this computer's screen isn't available on Linux yet; pick Extend or Duplicate on the other computer to show its screen here";
+    const no = { input: has("deskflow") ? "" : "Not available on this computer yet", extend: host, mirror: host };
     out.push({
       no,
       icon: iconFor(d.kind, d.os),

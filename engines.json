@@ -63,6 +63,12 @@
       "url": "https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.2.0/Moonlight-6.2.0.dmg",
       "sha256": "43617e5210d53968fcfb4a46526d1625a9056c6fe97e731673c31193dae776fc",
       "exe": "Moonlight"
+    },
+    "linux-x86_64": {
+      "version": "6.2.0",
+      "url": "https://github.com/moonlight-stream/moonlight-qt/releases/download/v6.2.0/Moonlight-6.2.0-x86_64.AppImage",
+      "sha256": "787b0dcbd42ae90620e76fb8d77d7c441ba6473a91c2d7fc3a0fc2466f992437",
+      "exe": "moonlight.AppImage"
     }
   },
   "vdd": {

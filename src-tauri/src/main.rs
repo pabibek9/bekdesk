@@ -385,6 +385,9 @@ fn main() {
         let r = display::install_elevated(std::path::Path::new(&args[2]));
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    // AppImages (Moonlight on Linux) normally need FUSE 2, which Fedora doesn't install by default; this runs them without.
+    #[cfg(target_os = "linux")]
+    std::env::set_var("APPIMAGE_EXTRACT_AND_RUN", "1");
     if let Some(code) = vdd_command(&args) {
         std::process::exit(code);
     }

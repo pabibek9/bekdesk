@@ -60,8 +60,9 @@ Then open **bekdesk** from the app menu. **Any distribution:** download `bekdesk
 - On Wayland (Fedora's default) GNOME asks once to **allow remote control** of the desktop; allow it, or the
   mouse can't move into the Linux computer.
 - GNOME shows no tray icon by default. Closing the window keeps bekdesk running; open it again from the app menu.
-- Extend, Duplicate and tablets need the screen-sharing engines, which aren't available for Linux yet; those
-  buttons are greyed out with the reason.
+- **Use the Linux computer as a screen for your Windows PC:** on the Windows PC choose **Extend** or **Duplicate**
+  for the Linux computer. The Linux side downloads Moonlight's AppImage the first time (no password).
+- Sharing the Linux computer's *own* screen isn't available yet; on Linux those buttons are greyed out with the reason.
 
 **Firewall (Fedora):** allow bekdesk's port on your home network:
 
