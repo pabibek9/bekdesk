@@ -717,6 +717,7 @@ $("#me").addEventListener("click", (e) => {
   i.addEventListener("keydown", (k) => { if (k.key === "Enter") done(true); if (k.key === "Escape") done(false); });
   i.addEventListener("blur", () => done(true));
 });
+$("#quit").addEventListener("click", (e) => { if (armed(e.currentTarget, "Press again to quit")) invoke("quit_app"); });
 $("#copy-addr").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(S.me.ip); toast(`Copied ${S.me.ip}`); } catch (_) { toast(`Your address is ${S.me.ip}`); }
 });

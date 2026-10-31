@@ -162,6 +162,13 @@ fn block_device(app: Core, fp: String) {
     modes::stop_local(&app, &fp, false);
 }
 
+/// Sidebar → Quit: stop sharing and close bekdesk completely (there's no tray icon to quit from on some Linux desktops).
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    modes::restore_pointer();
+    app.exit(0);
+}
+
 /// Opens one of the project's web pages in the browser (https only).
 #[tauri::command]
 fn open_url(url: String) {
@@ -485,7 +492,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, quit_app, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

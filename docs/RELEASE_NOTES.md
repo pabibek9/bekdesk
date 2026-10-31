@@ -1,3 +1,11 @@
+## bekdesk 0.1.16 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Quit bekdesk** from the sidebar (press twice). It stops all sharing and closes bekdesk completely, which matters on Linux desktops that have no tray icon.
+- **Share Input explains what's wrong** right on the device's card instead of silently not working: the other computer hasn't connected yet, it connected under a name this computer doesn't expect, or (on Linux) it hasn't been allowed to be controlled yet. Each comes with what to do; the advice disappears once it works.
+
 ## bekdesk 0.1.15 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
