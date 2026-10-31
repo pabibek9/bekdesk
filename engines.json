@@ -17,6 +17,12 @@
       "url": "https://github.com/deskflow/deskflow/releases/download/v1.27.0/deskflow-1.27.0-macos-x86_64.dmg",
       "sha256": "8aca3c77a1b16b9a3d6b8a380e5e38a0e6abf6d241bb32dcf3cf8b67abbff5d8",
       "exe": "deskflow-core"
+    },
+    "linux-x86_64": {
+      "version": "1.27.0",
+      "url": "https://github.com/deskflow/deskflow/releases/download/v1.27.0/deskflow-1.27.0-linux-x86_64.flatpak",
+      "sha256": "9fd7cac6a036f915c9c4775391c6bee0e04a8de9453bc27091499c2b0a19a5eb",
+      "exe": "deskflow-core"
     }
   },
   "sunshine": {

@@ -1,6 +1,6 @@
 [package]
 name = "bekdesk"
-version = "0.1.13"
+version = "0.1.14"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Local-network multi-computer workspace: share input, extend and mirror displays"
@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }

@@ -43,6 +43,38 @@ where the boxes touch. For Extend, the virtual monitor is placed on the side whe
 - Any paired device: drag files from Explorer/Finder onto the device's card in bekdesk.
 - Received files are in `Downloads/bekdesk/`.
 
+## Linux (preview: Share Input, clipboard and files)
+
+**Fedora:** download `bekdesk-Linux-x86_64.rpm` and install it:
+
+```bash
+sudo dnf install ./bekdesk-Linux-x86_64.rpm
+```
+
+Then open **bekdesk** from the app menu. **Any distribution:** download `bekdesk-Linux-x86_64.AppImage`, then
+`chmod +x bekdesk-Linux-x86_64.AppImage` and run it (Fedora may need `sudo dnf install fuse-libs` once).
+
+- The first time you choose **Share Input**, bekdesk installs Deskflow for your user from its official Flatpak (no
+  password; it downloads the KDE runtime once, a few hundred MB). If Deskflow is already installed from your
+  package manager, that one is used.
+- On Wayland (Fedora's default) GNOME asks once to **allow remote control** of the desktop; allow it, or the
+  mouse can't move into the Linux computer.
+- GNOME shows no tray icon by default. Closing the window keeps bekdesk running; open it again from the app menu.
+- Extend, Duplicate and tablets need the screen-sharing engines, which aren't available for Linux yet; those
+  buttons are greyed out with the reason.
+
+**Firewall (Fedora):** allow bekdesk's port on your home network:
+
+```bash
+sudo firewall-cmd --permanent --add-port=47290/tcp --add-service=mdns && sudo firewall-cmd --reload
+```
+
+**Testing two copies on one Linux machine** (no second computer needed):
+
+```bash
+BEKDESK_DATA=/tmp/bekdesk-b BEKDESK_PORT=47291 bekdesk
+```
+
 ## 5. Android tablet
 
 bekdesk for Android isn't available yet; the tablet uses **Moonlight** as its screen receiver.
