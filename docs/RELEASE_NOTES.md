@@ -1,7 +1,7 @@
 ## bekdesk 0.1.21 — preview
 
 ### Changes
-- **New look with Nepal artwork:** icons in the sidebar with Boudhanath above your profile; a boy in a Dhaka topi beside "Can't see a computer?" on a Himalayan dawn; Everest across Manage Screens with a girl in a kurtha and her pagoda temple in the corner; Pashupatinath on Connections and Janaki Mandir on Settings. Mode buttons have icons, and Settings groups each section in its own card with clearer permission descriptions. The illustrations never take clicks, so dragging screens works as before; the logo is unchanged.
+- **New look with Nepal artwork:** icons in the sidebar with Boudhanath above your profile; a boy in a Dhaka topi beside "Can't see a computer?" on a Himalayan dawn; Everest across Manage Screens with a girl in a kurtha and her pagoda temple just below it; small handwritten captions beside both; Pashupatinath on Connections and Janaki Mandir on Settings. Mode buttons have icons, and Settings groups each section in its own card with clearer permission descriptions. The illustrations never take clicks, so dragging screens works as before; the logo is unchanged.
 - The Share Input hint no longer mentions the edge drop box, which 0.1.20 switched off.
 
 ## bekdesk 0.1.20 — preview

@@ -304,10 +304,8 @@ body { animation: appIn .55s var(--spring) both; }
 .canvas::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background: url(art/everest.webp) center top / cover no-repeat;
   -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 92%); mask-image: linear-gradient(to bottom, #000 40%, transparent 92%); }
-.canvas::after { content: ""; position: absolute; right: 8px; bottom: 0; z-index: 0; pointer-events: none;
-  width: min(300px, 38%); aspect-ratio: 720 / 446; background: url(art/kurtha-temple.webp) right bottom / contain no-repeat; }
+.canvas { height: 470px; }
 .group, .ws-hint { z-index: 1; }
-.ws-hint { left: 6%; width: 58%; transform: none; }
 
 /* Connections: Pashupatinath band under the title. Settings: Boudhanath at the right of the device card. */
 .band { position: relative; height: 104px; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); margin: -6px 0 6px; background: var(--panel); overflow: hidden; }
@@ -339,3 +337,13 @@ body { animation: appIn .55s var(--spring) both; }
 .perm summary { font-weight: 600; color: var(--ink); }
 @media (max-width: 760px) { .perm .caps { grid-template-columns: 1fr; } }
 @media (prefers-color-scheme: dark) { .canvas::before { -webkit-mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); } }
+
+/* handwritten captions beside the illustrations */
+.cute { font: 600 17px/1.25 "Segoe Print", "Bradley Hand", "Comic Neue", "Comic Sans MS", cursive; color: var(--accent); transform: rotate(-4deg); pointer-events: none; }
+.addr-cute { position: absolute; right: 196px; bottom: 34px; text-align: right; }
+@media (max-width: 860px) { .addr-cute { display: none; } }
+.ws-foot { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 6px; pointer-events: none; }
+.ws-foot img { height: 150px; width: auto; }
+.ws-foot .cute { color: #c0392b; margin-bottom: 30px; }
+@media (prefers-color-scheme: dark) { .ws-foot .cute { color: #f08a7e; } }
+@media (max-width: 680px) { .ws-foot img { height: 110px; } }
