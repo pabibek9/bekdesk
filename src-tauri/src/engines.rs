@@ -62,7 +62,16 @@ fn find(dir: &Path, exe: &str) -> Option<PathBuf> {
 
 /// Returns the engine's executable (or INF for the display driver), downloading it if needed.
 pub async fn ensure(app: &App, name: &str, note_key: &str) -> Result<PathBuf> {
-    let p = pkg(name).with_context(|| format!("{name} is not available on {}", platform()))?;
+    // Linux: a Deskflow installed with the system's package manager is used as is.
+    if cfg!(target_os = "linux") && name == "deskflow" {
+        if let Some(p) = std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path).map(|d| d.join("deskflow-core")).find(|p| p.is_file())) {
+            return Ok(p);
+        }
+    }
+    let p = pkg(name).with_context(|| match name {
+        "sunshine" | "moonlight" | "vdd" if cfg!(target_os = "linux") => "showing screens isn't available on Linux yet; Share Input, clipboard and files work".to_string(),
+        _ => format!("{name} is not available on {}", platform()),
+    })?;
     let dir = dir_for(app, name, &p);
     let _guard = app.engine_lock.lock().await;
     if !dir.join(".ok").exists() {
@@ -131,6 +140,36 @@ fn extract(file: &Path, dir: &Path) -> Result<()> {
             let _ = std::fs::remove_dir(&mnt);
             res?
         }
+        // Linux: Deskflow's official Flatpak, installed for this user only (no root), and a small launcher that
+        // runs its deskflow-core with access to bekdesk's folder (where its settings files are written).
+        "flatpak" => {
+            let ok = |args: &[&str]| std::process::Command::new("flatpak").args(args).status().is_ok_and(|s| s.success());
+            ok(&["remote-add", "--user", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"]);
+            if !ok(&["install", "--user", "-y", "--noninteractive", &file.to_string_lossy()]) {
+                bail!("flatpak couldn't install Deskflow (is flatpak installed?)");
+            }
+            let data = dir.parent().and_then(Path::parent).context("bad engine folder")?;
+            let launcher = dir.join("deskflow-core");
+            std::fs::write(
+                &launcher,
+                format!("#!/bin/sh\nexec flatpak run --die-with-parent --filesystem='{}' --command=deskflow-core org.deskflow.deskflow \"$@\"\n", data.display()),
+            )?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
+            }
+        }
+        // Linux viewer: Moonlight's AppImage runs as is (main() makes AppImages run without FUSE).
+        "AppImage" => {
+            let exe = dir.join("moonlight.AppImage");
+            std::fs::copy(file, &exe)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755))?;
+            }
+        }
         _ => bail!("unsupported package {}", file.display()),
     }
     Ok(())
@@ -149,7 +188,7 @@ pub async fn prefetch(app: std::sync::Arc<App>) {
             }
             if let Err(e) = ensure(&app, name, "components").await {
                 app.log(format!("downloading {name}: {e:#}"));
-                failed = Some(name);
+                failed = Some(format!("{e:#}"));
             }
         }
         match failed {
@@ -157,7 +196,7 @@ pub async fn prefetch(app: std::sync::Arc<App>) {
                 app.note("components", "");
                 return;
             }
-            Some(n) => app.note("components", format!("Couldn't download {n} (no internet?). Retrying…")),
+            Some(e) => app.note("components", format!("Couldn't set up {e}. Retrying in a minute…")),
         }
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     }

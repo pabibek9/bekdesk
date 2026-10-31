@@ -21,6 +21,7 @@ Download from [Releases](https://github.com/pabibek9/bekdesk/releases):
 |---|---|
 | Windows 10/11 x64 | `bekdesk-Windows-x64-Setup.exe` |
 | macOS 11+ (Apple Silicon and Intel) | `bekdesk-macOS-universal.dmg` |
+| Linux (Fedora and others, x86-64) — preview | `bekdesk-Linux-x86_64.rpm` or `bekdesk-Linux-x86_64.AppImage`: Share Input, clipboard, files, and showing your PC's screen (Extend/Duplicate *to* Linux) |
 | Android tablet | Install **Moonlight** (Play Store / F-Droid) — see below |
 
 Installers are **not code-signed** yet: Windows SmartScreen and macOS Gatekeeper will warn the first

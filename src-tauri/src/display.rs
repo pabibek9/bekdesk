@@ -576,7 +576,10 @@ pub fn device_kind() -> &'static str {
             "desktop"
         }
         #[cfg(not(any(windows, target_os = "macos")))]
-        "desktop"
+        {
+            let battery = std::fs::read_dir("/sys/class/power_supply").into_iter().flatten().flatten().any(|e| e.file_name().to_string_lossy().starts_with("BAT"));
+            if battery { "laptop" } else { "desktop" }
+        }
     })
 }
 

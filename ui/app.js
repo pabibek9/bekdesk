@@ -84,6 +84,8 @@ const speedSlider = (key, name) => {
   return `<label class="spd">Mouse speed on ${esc(name)}<input type="range" min="0.5" max="3" step="0.25" value="${v}" data-speed="${esc(key)}" /><b>${v.toFixed(2).replace(/0$/, "")}×</b></label>`;
 };
 
+const has = (engine) => !!(S.engines && S.engines[engine] && S.engines[engine].version);
+
 // One entry per thing you can connect: each nearby computer, plus the Android tablet.
 function entities() {
   const out = [];
@@ -98,7 +100,11 @@ function entities() {
     else if (ses) pill = ["wait", "Connecting…"];
     else if (!d.online) pill = ["off", "Offline"];
     else pill = ["ready", d.trusted || d.once ? "Ready" : "Not paired"];
+    // What this computer can do (Linux can't share its own screen yet, but can show another computer's).
+    const host = has("sunshine") ? "" : "Sharing this computer's screen isn't available on Linux yet; pick Extend or Duplicate on the other computer to show its screen here";
+    const no = { input: has("deskflow") ? "" : "Not available on this computer yet", extend: host, mirror: host };
     out.push({
+      no,
       icon: iconFor(d.kind, d.os),
       key: d.fp, kind: "pc", online: d.online, name: d.name || "Unknown device", os: d.os, sub: `${osName(d.os)} · ${status(d)}`, pill, mode,
       modes: ["input", "extend", "mirror", "off"], disabled: !d.online || !!busy[d.fp], extendOk: winHost, note: d.note,
@@ -111,6 +117,9 @@ function entities() {
           + (mode !== "off" && !busy[d.fp] ? reconnectBtn(d.fp) : "") : "",
     });
   }
+  // Tablets and phones need the screen-sharing engine, which this computer may not have (Linux for now).
+  document.querySelector(".addtab")?.classList.toggle("hidden", !has("sunshine"));
+  if (!has("sunshine")) return out;
   const t = S.tablet || "off", ts = S.tablet_state || {};
   const host = `bekdesk ${S.me.name} for Moonlight`;
   // A Moonlight device that tapped this computer and is waiting for its PIN. Nothing is shared until a mode is picked.
@@ -190,8 +199,9 @@ function renderDevices() {
     el.querySelectorAll("[data-mode]").forEach((b) => {
       const m = b.dataset.mode, noExt = m === "extend" && !e.extendOk;
       b.classList.toggle("on", e.mode === m);
-      b.disabled = !e.online || (e.disabled && e.mode !== m) || noExt;
-      b.title = noExt ? "Extend from macOS isn't available yet" : "";
+      const why = (e.no && e.no[m]) || (noExt ? "Extend from macOS isn't available yet" : "");
+      b.disabled = !e.online || (e.disabled && e.mode !== m) || !!why;
+      b.title = why;
     });
     const note = el.querySelector(".note");
     note.textContent = e.note || "";

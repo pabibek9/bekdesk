@@ -385,13 +385,22 @@ fn main() {
         let r = display::install_elevated(std::path::Path::new(&args[2]));
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    // AppImages (Moonlight on Linux) normally need FUSE 2, which Fedora doesn't install by default; this runs them without.
+    #[cfg(target_os = "linux")]
+    std::env::set_var("APPIMAGE_EXTRACT_AND_RUN", "1");
     if let Some(code) = vdd_command(&args) {
         std::process::exit(code);
     }
     #[cfg(windows)]
     engines_die_with_us();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Opening bekdesk again (e.g. from the app menu on Linux, where GNOME shows no tray icon) shows the running one.
+    // A test copy with its own data folder (BEKDESK_DATA) may run alongside.
+    if std::env::var_os("BEKDESK_DATA").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)));
+    }
+    builder
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .setup(move |app| {
             // Overrides let two instances run side by side on one machine for testing.
@@ -451,7 +460,8 @@ fn main() {
             let open = MenuItem::with_id(app, "open", "Open bekdesk", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
-            TrayIconBuilder::new()
+            // No tray on desktops without one (GNOME without the AppIndicator extension): run without it.
+            if let Err(e) = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().ok_or("no icon")?)
                 .tooltip("bekdesk")
                 .menu(&menu)
@@ -469,7 +479,10 @@ fn main() {
                         show(t.app_handle());
                     }
                 })
-                .build(app)?;
+                .build(app)
+            {
+                core.log(format!("no tray icon: {e}"));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
