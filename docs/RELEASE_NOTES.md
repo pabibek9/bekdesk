@@ -1,3 +1,9 @@
+## bekdesk 0.1.20 — preview
+
+### Changes
+- **Crash fixes (cause not confirmed):** the drop-zone window at the screen edge is switched off, since it was the newest thing that runs while sharing; a problem in a background task no longer closes the whole app; any panic is written to `logs/crash.log` in the data folder (Connections -> Open logs).
+- **Sound:** the Linux packages now require `pulseaudio-utils`, which sound sharing needs. Windows and macOS still cannot send sound.
+
 ## bekdesk 0.1.19 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
