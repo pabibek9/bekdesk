@@ -274,15 +274,15 @@ body { animation: appIn .55s var(--spring) both; }
 #me::before { content: ""; position: absolute; left: 14px; top: 12px; width: 34px; height: 34px; border-radius: 50%; background: #fdf1e7 url(art/avatar.webp) center / 30px no-repeat; box-shadow: 0 0 0 1px var(--line); }
 .ver, .nav .quit { position: relative; margin-left: 0; margin-right: -12px; padding-left: 58px; background: var(--panel); }
 .ver { margin-bottom: 0; padding-bottom: 4px; } .nav .quit { margin-bottom: 0; padding-bottom: 14px; border-radius: 0; }
-@media (prefers-color-scheme: dark) { .nav-art { opacity: .35; } }
 
 /* Nearby Devices: address card with the manual-connect panel; the boy sits at its right */
 .addr { grid-template-columns: auto 1fr auto; padding: 0; overflow: hidden; gap: 0 14px; }
 .addr .wifi { margin: 16px 0 16px 18px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
 .addr .wifi svg { stroke: var(--accent); }
 .addr-me { padding: 14px 0; } .addr-act { padding-right: 16px; }
-.addr-connect { grid-column: 1 / -1; position: relative; min-height: 132px; padding: 14px 18px 16px; border-top: 1px solid var(--line);
-  background: linear-gradient(90deg, var(--panel) 0%, color-mix(in srgb, var(--panel) 94%, transparent) 40%, color-mix(in srgb, var(--panel) 55%, transparent) 70%, color-mix(in srgb, var(--panel) 20%, transparent) 100%), url(art/himalaya-dawn.webp) 70% 78% / cover no-repeat; }
+.addr-connect { grid-column: 1 / -1; position: relative; isolation: isolate; min-height: 132px; padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+.addr-connect::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: url(art/himalaya-dawn.webp) 70% 78% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent 15%, rgba(0,0,0,.45) 55%, #000 100%); mask-image: linear-gradient(90deg, transparent 15%, rgba(0,0,0,.45) 55%, #000 100%); }
 .addr-connect summary { font-weight: 600; color: var(--ink); }
 .addr-connect form { position: relative; z-index: 1; max-width: calc(100% - 190px); }
 .addr-connect input { width: 260px; max-width: 100%; }
@@ -290,7 +290,6 @@ body { animation: appIn .55s var(--spring) both; }
 .addr-connect:not([open]) { min-height: 0; } .addr-connect:not([open]) .addr-art { display: none; }
 @media (max-width: 860px) { .addr-art { height: 118px; } .addr-connect form { max-width: calc(100% - 140px); } }
 @media (max-width: 680px) { .addr-art { display: none; } .addr-connect form { max-width: none; } }
-@media (prefers-color-scheme: dark) { .addr-connect { background: linear-gradient(90deg, var(--panel) 30%, color-mix(in srgb, var(--panel) 75%, transparent)), url(art/himalaya-dawn.webp) 70% 78% / cover no-repeat; } }
 
 /* device cards: icon tiles and mode buttons with icons */
 .dev .ico { background: #1d2230; } .dev .ico svg { stroke: #d6dcea; }
@@ -303,22 +302,25 @@ body { animation: appIn .55s var(--spring) both; }
 /* Manage Screens: Everest across the top of the canvas; the kurtha girl with her temple in the lower right */
 .canvas { isolation: isolate; background-color: var(--panel); background-image: none; }
 .canvas::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(to bottom, transparent 45%, var(--panel) 92%), url(art/everest.webp) center top / cover no-repeat; }
+  background: url(art/everest.webp) center top / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 92%); mask-image: linear-gradient(to bottom, #000 40%, transparent 92%); }
 .canvas::after { content: ""; position: absolute; right: 8px; bottom: 0; z-index: 0; pointer-events: none;
   width: min(300px, 38%); aspect-ratio: 720 / 446; background: url(art/kurtha-temple.webp) right bottom / contain no-repeat; }
 .group, .ws-hint { z-index: 1; }
 .ws-hint { left: 6%; width: 58%; transform: none; }
-@media (prefers-color-scheme: dark) { .canvas::before { opacity: .22; } }
 
 /* Connections: Pashupatinath band under the title. Settings: Boudhanath at the right of the device card. */
-.band { height: 104px; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); margin: -6px 0 6px;
-  background: linear-gradient(90deg, var(--panel) 0%, color-mix(in srgb, var(--panel) 70%, transparent) 30%, transparent 70%), url(art/pashupati.webp) right 62% / cover no-repeat; }
+.band { position: relative; height: 104px; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); margin: -6px 0 6px; background: var(--panel); overflow: hidden; }
+.band::before { content: ""; position: absolute; inset: 0; background: url(art/pashupati.webp) right 62% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent 5%, rgba(0,0,0,.6) 40%, #000 70%); mask-image: linear-gradient(90deg, transparent 5%, rgba(0,0,0,.6) 40%, #000 70%); }
 .setdev { overflow: hidden; }
 .setdev::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 38%; z-index: 0; pointer-events: none;
-  background: linear-gradient(90deg, var(--panel), transparent 55%), url(art/janaki.webp) 42% 58% / cover no-repeat; }
+  background: url(art/janaki.webp) 42% 58% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 55%); mask-image: linear-gradient(90deg, transparent, #000 55%); }
 .setdev > * { position: relative; z-index: 1; }
 @media (max-width: 680px) { .setdev::after { opacity: .35; } }
-@media (prefers-color-scheme: dark) { .band, .setdev::after { opacity: .4; } }
+/* dark mode: the same pictures, a little dimmer so they sit in the dark cards */
+@media (prefers-color-scheme: dark) { .nav-art, .addr-connect::before, .canvas::before, .band::before, .setdev::after { opacity: .8; filter: brightness(.8) saturate(.9); } }
 
 /* Settings: one card per section, an icon tile on the left */
 .scard { position: relative; display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; margin-bottom: 12px; }
@@ -336,3 +338,4 @@ body { animation: appIn .55s var(--spring) both; }
 .perm .caps small { display: block; font-size: 11.5px; color: var(--ink3); }
 .perm summary { font-weight: 600; color: var(--ink); }
 @media (max-width: 760px) { .perm .caps { grid-template-columns: 1fr; } }
+@media (prefers-color-scheme: dark) { .canvas::before { -webkit-mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); } }
