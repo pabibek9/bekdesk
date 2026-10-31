@@ -601,6 +601,40 @@ pub fn is_locked() -> bool {
     false
 }
 
+/// While another computer controls this one, keep it from blanking the screen, locking from idle or sleeping
+/// (its user is working on it from the other keyboard). Locking by hand still works. Call every few seconds.
+pub fn keep_awake(on: bool) {
+    #[cfg(windows)]
+    if on {
+        use windows_sys::Win32::System::Power::{SetThreadExecutionState, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED};
+        // Resets the idle timers once; repeating it is what keeps the computer awake, so stopping needs nothing.
+        unsafe { SetThreadExecutionState(ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED) };
+    }
+    #[cfg(target_os = "linux")]
+    {
+        static INHIBIT: std::sync::Mutex<Option<std::process::Child>> = std::sync::Mutex::new(None);
+        let mut held = INHIBIT.lock().unwrap();
+        if !on {
+            if let Some(mut c) = held.take() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+        } else if held.as_mut().is_none_or(|c| !matches!(c.try_wait(), Ok(None))) {
+            let why = "Another computer is controlling this one with bekdesk";
+            // shortcut: if bekdesk crashes the inhibitor outlives it until logout; tie it to bekdesk's life if that bites.
+            // GNOME's own idle inhibitor (stops the screen blanking and locking); logind's for other desktops.
+            *held = std::process::Command::new("gnome-session-inhibit")
+                .args(["--app-id", "bekdesk", "--reason", why, "--inhibit", "idle:suspend", "--inhibit-only"])
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .or_else(|_| std::process::Command::new("systemd-inhibit").args(["--what=idle:sleep", "--who=bekdesk", &format!("--why={why}"), "sleep", "infinity"]).spawn())
+                .ok();
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    let _ = on;
+}
+
 /// "laptop" if the machine has a built-in battery, else "desktop"; drives the device frame in Manage Screens.
 pub fn device_kind() -> &'static str {
     static KIND: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();

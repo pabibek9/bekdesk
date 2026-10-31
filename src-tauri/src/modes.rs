@@ -678,6 +678,15 @@ async fn refresh_pending(app: &App) {
     remove_duplicates(app).await;
 }
 
+/// Which side of this computer's screens `fp` sits on in Manage Screens: "left", "right", "up" or "down".
+pub fn peer_side(app: &App, fp: &str) -> Option<&'static str> {
+    let layout = default_positions(app);
+    let me = device_box(&app.monitors.lock().unwrap(), layout.get(SELF).copied());
+    let other = device_box(&app.peer(fp).map(|p| p.monitors).unwrap_or_default(), layout.get(fp).copied());
+    let screens = vec![("me".to_string(), me.x + me.w / 2.0, me.y + me.h / 2.0), ("it".to_string(), other.x + other.w / 2.0, other.y + other.h / 2.0)];
+    links(&screens).into_iter().find(|(a, _, _)| a == "me").map(|(_, dir, _)| dir)
+}
+
 /// Where the virtual monitor goes relative to this computer's primary display, from the Workspace layout.
 fn placement(app: &App, fp: &str, (w, h): (u32, u32)) -> (i32, i32) {
     let layout = default_positions(app);

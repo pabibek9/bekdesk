@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use bekdesk_core::app::{Caps, Decision, Mode, Pos};
-use bekdesk_core::{clip, discovery, display, modes, net, App};
+use bekdesk_core::{audio, clip, discovery, display, modes, net, App};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -138,6 +138,26 @@ fn set_sound(app: Core, key: String, on: bool) {
     app.save();
 }
 
+/// Whether the sound of `fp` (a computer this one controls with Share Input) plays here, muted there.
+#[tauri::command]
+fn set_hear(app: Core, fp: String, on: bool) {
+    let core = app.inner();
+    let mut cfg = core.cfg.lock().unwrap();
+    if on { cfg.hear.insert(fp.clone()) } else { cfg.hear.remove(&fp) };
+    drop(cfg);
+    core.save();
+    audio::sync(core);
+}
+
+/// Whether this computer stays awake (no idle lock or sleep) while `fp` controls it with Share Input.
+#[tauri::command]
+fn set_stay_awake(app: Core, fp: String, on: bool) {
+    let mut cfg = app.cfg.lock().unwrap();
+    if on { cfg.let_sleep.remove(&fp) } else { cfg.let_sleep.insert(fp) };
+    drop(cfg);
+    app.save();
+}
+
 #[tauri::command]
 async fn rescan(app: Core<'_>) -> Result<(), String> {
     modes::rescan(app.inner()).await;
@@ -160,6 +180,86 @@ fn block_device(app: Core, fp: String) {
     }
     app.save();
     modes::stop_local(&app, &fp, false);
+}
+
+/// While this computer shares its keyboard and mouse with another, a small drop zone sits on the screen edge
+/// facing it (as placed in Manage Screens): drag files or images onto it and they go to that computer, ready to paste.
+fn sync_drop_zones(app: &tauri::AppHandle, core: &App) {
+    let want: Vec<(String, String, &str)> = core
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, s)| s.origin && s.mode == Mode::Input)
+        .filter_map(|(fp, _)| Some((format!("dropzone-{}", &fp[..fp.len().min(12)]), fp.clone(), modes::peer_side(core, fp)?)))
+        .collect();
+    for (label, w) in app.webview_windows() {
+        if label.starts_with("dropzone-") && !want.iter().any(|(l, _, _)| *l == label) {
+            let _ = w.close();
+        }
+    }
+    let mons = real_monitors(app);
+    let Some(x0) = mons.iter().map(|m| m.0).min() else { return };
+    let y0 = mons.iter().map(|m| m.1).min().unwrap_or(0);
+    let x1 = mons.iter().map(|m| m.0 + m.2 as i32).max().unwrap_or(0);
+    let y1 = mons.iter().map(|m| m.1 + m.3 as i32).max().unwrap_or(0);
+    for (label, fp, side) in want {
+        let w = match app.get_webview_window(&label) {
+            Some(w) => w,
+            None => {
+                let q: String = format!("fp={fp}&side={side}&name={}", core.peer_name(&fp)).chars().map(|c| if c == ' ' { '+' } else { c }).filter(|c| c.is_ascii_alphanumeric() || "=&+-_.".contains(*c)).collect();
+                let b = WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App(format!("dropzone.html?{q}").into()))
+                    .title("bekdesk drop zone")
+                    .decorations(false)
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .resizable(false)
+                    .focused(false)
+                    .shadow(false)
+                    .inner_size(if matches!(side, "left" | "right") { 64.0 } else { 180.0 }, if matches!(side, "left" | "right") { 180.0 } else { 64.0 });
+                #[cfg(not(target_os = "macos"))]
+                let b = b.transparent(true);
+                match b.build() {
+                    Ok(w) => w,
+                    Err(e) => return core.log(format!("drop zone: {e}")),
+                }
+            }
+        };
+        // Centred on the edge of the whole desktop that faces the other computer, a little in from the very edge:
+        // touching the edge itself would move the pointer (and the drag) over to that computer.
+        if let Ok(sz) = w.outer_size() {
+            let (w_, h_, gap) = (sz.width as i32, sz.height as i32, 16);
+            let (cx, cy) = ((x0 + x1 - w_) / 2, (y0 + y1 - h_) / 2);
+            let (x, y) = match side {
+                "left" => (x0 + gap, cy),
+                "right" => (x1 - w_ - gap, cy),
+                "up" => (cx, y0 + gap),
+                _ => (cx, y1 - h_ - gap),
+            };
+            let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+    }
+}
+
+/// Drop zone → send the dropped files to `fp` and put them on its clipboard, so they can be pasted there.
+#[tauri::command]
+async fn drop_files(app: Core<'_>, fp: String, paths: Vec<String>) -> Result<(), String> {
+    net::send_files(&app, &fp, paths.into_iter().map(PathBuf::from).collect(), true).await.map_err(|e| format!("{e:#}"))
+}
+
+/// Sidebar → "Check for updates".
+#[tauri::command]
+async fn check_update() -> Result<Option<String>, String> {
+    bekdesk_core::update::check().await
+}
+
+/// Sidebar → "Update to …": download, check and start installing the new version, then close so it can replace us.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle, core: Core<'_>) -> Result<(), String> {
+    bekdesk_core::update::install(&core.dir).await.map_err(|e| format!("{e:#}"))?;
+    modes::restore_pointer();
+    app.exit(0);
+    Ok(())
 }
 
 /// Device card → Details: what the logs say about the connection with `key` (a peer or "tablet").
@@ -216,6 +316,12 @@ fn snapshot(app: Core) -> serde_json::Value {
     let mut v = app.snapshot();
     v["me"]["screens"] = display::screens();
     v["me"]["scroll_lock"] = modes::scroll_locked(&app).into();
+    v["version"] = env!("CARGO_PKG_VERSION").into();
+    v["update"] = match &*bekdesk_core::update::STATE.lock().unwrap() {
+        Some(Ok(Some(latest))) => serde_json::json!({"available": latest}),
+        Some(Err(e)) => serde_json::json!({"error": e}),
+        _ => serde_json::json!({}),
+    };
     v["layout"] = serde_json::to_value(modes::default_positions(&app)).unwrap_or_default();
     v
 }
@@ -453,6 +559,14 @@ fn main() {
             clip::start(core.clone(), rt);
             tauri::async_runtime::spawn(modes::supervise(core.clone()));
             tauri::async_runtime::spawn(bekdesk_core::engines::prefetch(core.clone()));
+            // Look for a new version a minute after starting, then every six hours.
+            tauri::async_runtime::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                loop {
+                    let _ = bekdesk_core::update::check().await;
+                    tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
+                }
+            });
             let c = core.clone();
             std::thread::spawn(move || modes::pointer_watch(c));
             let (handle, c) = (app.handle().clone(), core.clone());
@@ -474,6 +588,13 @@ fn main() {
                         drop(m);
                         readvertise(&handle, &c);
                     }
+                    sync_drop_zones(&handle, &c);
+                    audio::sync(&c);
+                    let awake = {
+                        let let_sleep = c.cfg.lock().unwrap().let_sleep.clone();
+                        c.sessions.lock().unwrap().iter().any(|(fp, x)| !x.origin && x.mode == Mode::Input && !let_sleep.contains(fp))
+                    };
+                    display::keep_awake(awake);
                 }
             });
 
@@ -505,7 +626,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

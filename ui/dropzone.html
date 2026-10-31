@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>bekdesk</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none;
+      font: 600 12px/1.25 -apple-system, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+    #z { box-sizing: border-box; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center;
+      gap: 6px; padding: 8px; border-radius: 14px; color: #fff; background: rgba(47, 107, 255, .55);
+      border: 2px dashed rgba(255, 255, 255, .7); transition: background .2s, transform .2s; }
+    #z.v { flex-direction: column; }
+    #z.hot { background: rgba(47, 107, 255, .95); transform: scale(1.04); }
+    #z.ok { background: rgba(31, 157, 85, .95); border-style: solid; }
+    #z.err { background: rgba(209, 52, 59, .95); border-style: solid; }
+    b { font-size: 18px; }
+  </style>
+</head>
+<body><div id="z"><b id="a"></b><span id="t"></span></div><script src="dropzone.js"></script></body>
+</html>

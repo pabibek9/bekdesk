@@ -86,6 +86,13 @@ bekdesk for Android isn't available yet; the tablet uses **Moonlight** as its sc
 3. On the tablet, Moonlight lists the computer automatically. Tap it, note the 4-digit PIN, enter it in
    bekdesk and press **Pair**. Then tap **Desktop**. Touch input controls the computer.
 
+## Updates
+
+bekdesk shows its version at the bottom of the sidebar and checks the GitHub releases of `pabibek9/bekdesk` for a
+newer one. **The releases have to be readable without signing in** for installed copies to see them: either make
+the repository public, or publish the release files to a separate public repository and change `REPO` in
+`src-tauri/src/update.rs`. While they aren't readable, the sidebar says "Couldn't check for updates".
+
 ## Uninstall
 
 Windows: *Settings → Apps → bekdesk → Uninstall*. macOS: drag bekdesk to the Trash.
