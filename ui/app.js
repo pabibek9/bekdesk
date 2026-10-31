@@ -75,6 +75,16 @@ const speedSlider = (key, name) => {
   return `<label class="spd">Mouse speed on ${esc(name)}<input type="range" min="0.5" max="3" step="0.25" value="${v}" data-speed="${esc(key)}" /><b>${v.toFixed(2).replace(/0$/, "")}×</b></label>`;
 };
 
+// Share Input: hear the controlled computer here (it goes quiet there). Only Linux can send its sound so far.
+const hearToggle = (d) => {
+  if (d.os !== "linux") return "";
+  const on = (S.hear || []).includes(d.fp), st = (S.hearing || {})[d.fp];
+  const note = on && st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? `Playing ${esc(d.name)}'s sound here.` : `No sound yet: ${esc(st)}`}</div>` : "";
+  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC (muted on ${esc(d.name)})</label>${note}`;
+};
+// Being controlled: stay awake so the screen doesn't blank and lock while you work from the other keyboard.
+const awakeToggle = (d) => `<label class="snd"><input type="checkbox" data-awake="${esc(d.fp)}" ${(S.let_sleep || []).includes(d.fp) ? "" : "checked"}/> Keep this computer awake and unlocked while ${esc(d.name)} controls it</label>`;
+
 const has = (engine) => !!(S.engines && S.engines[engine] && S.engines[engine].version);
 
 // A computer's card body: the one thing to know right now and its one action, then the rest under "More".
@@ -84,7 +94,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const sharing = ses && ses.origin && ses.mode === "input", controlled = ses && !ses.origin && ses.mode === "input";
   let msg = "", act = "";
   if (!d.online) msg = paired ? `<div class="hint">${name} is asleep, switched off, or bekdesk is closed on it. It reconnects by itself when it's back.</div>` : "";
-  else if (d.locked) msg = `<div class="hint warn">${name} is locked. Unlock it on that computer to continue.</div>`;
+  else if (d.locked) msg = `<div class="hint warn">${name} is locked. Unlock it on that computer to continue; while you share, bekdesk then keeps it awake so it doesn't lock again from being idle.</div>`;
   else if (!paired) msg = `<div class="hint">Pick a mode to connect. ${name} asks to approve; check both screens show <b>${esc(d.code)}</b>.</div>`;
   else if (sharing && S.me.scroll_lock) { msg = `<div class="hint warn">Scroll Lock is on, so the mouse stays on this PC.</div>`; act = `<button class="btn primary" data-scroll-lock="1">Turn off Scroll Lock</button>`; }
   else if (controlled) { msg = `<div class="hint ok">${name}'s keyboard and mouse are controlling this computer.</div>`; act = `<button class="btn primary" data-mode="input" data-fp="${esc(d.fp)}">Use this PC's keyboard &amp; mouse instead</button>`; }
@@ -97,6 +107,8 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const more = [
     mode === "extend" || mode === "input" ? speedSlider(d.fp, d.name) : "",
     mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "",
+    sharing ? hearToggle(d) : "",
+    controlled ? awakeToggle(d) : "",
     mode !== "off" && !busy[d.fp] && !stuck ? `<div class="acts1">${reconnectBtn(d.fp)}</div>` : "",
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
     paired ? `<div class="acts1"><button class="link danger" data-forget-card="${esc(d.fp)}">Forget this computer</button></div>` : "",
@@ -329,6 +341,18 @@ $("#device-list").addEventListener("change", async (e) => {
     const key = e.target.dataset.speed, factor = +e.target.value;
     S.pointer = { ...(S.pointer || {}), [key]: factor };
     call("set_pointer", { key, factor });
+    return;
+  }
+  if (e.target.dataset.hear) {
+    const fp = e.target.dataset.hear, on = e.target.checked;
+    S.hear = on ? [...(S.hear || []), fp] : (S.hear || []).filter((x) => x !== fp);
+    call("set_hear", { fp, on });
+    return;
+  }
+  if (e.target.dataset.awake) {
+    const fp = e.target.dataset.awake, on = e.target.checked;
+    S.let_sleep = on ? (S.let_sleep || []).filter((x) => x !== fp) : [...(S.let_sleep || []), fp];
+    call("set_stay_awake", { fp, on });
     return;
   }
   if (e.target.dataset.sound) {

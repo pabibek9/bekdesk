@@ -2,6 +2,7 @@
 //! The Tauri shell (main.rs) is a thin UI layer over this crate so the core can be tested headless.
 
 pub mod app;
+pub mod audio;
 pub mod clip;
 pub mod discovery;
 pub mod display;

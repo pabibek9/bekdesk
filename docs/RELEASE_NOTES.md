@@ -1,3 +1,11 @@
+## bekdesk 0.1.19 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Hear the other computer here:** while this PC shares its keyboard and mouse with a Linux computer, open **More** on that computer's card and tick **Play <name>'s sound on this PC**. Its sound then comes out of this PC's speakers and its own speakers go quiet; they come back when you untick it or stop sharing. Both computers need 0.1.19. The Linux computer needs `pactl`, `parec` and `pacat` (the pulseaudio-utils package, installed on Fedora and Ubuntu desktops). Sending sound from Windows or a Mac isn't available yet.
+- **No more surprise lock screens while you share:** a computer being controlled from another keyboard now stays awake, so its screen doesn't blank and lock just because you were working on the other computer for a while. You can still lock it yourself, and you can turn this off per computer under **More** on its card. bekdesk never unlocks a computer or types its password for you: if it's already locked, unlock it there.
+
 ## bekdesk 0.1.18 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

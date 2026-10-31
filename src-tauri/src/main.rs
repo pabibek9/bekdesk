@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use bekdesk_core::app::{Caps, Decision, Mode, Pos};
-use bekdesk_core::{clip, discovery, display, modes, net, App};
+use bekdesk_core::{audio, clip, discovery, display, modes, net, App};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -135,6 +135,26 @@ fn set_pointer(app: Core, key: String, factor: f64) {
 #[tauri::command]
 fn set_sound(app: Core, key: String, on: bool) {
     app.cfg.lock().unwrap().sound.insert(key, on);
+    app.save();
+}
+
+/// Whether the sound of `fp` (a computer this one controls with Share Input) plays here, muted there.
+#[tauri::command]
+fn set_hear(app: Core, fp: String, on: bool) {
+    let core = app.inner();
+    let mut cfg = core.cfg.lock().unwrap();
+    if on { cfg.hear.insert(fp.clone()) } else { cfg.hear.remove(&fp) };
+    drop(cfg);
+    core.save();
+    audio::sync(core);
+}
+
+/// Whether this computer stays awake (no idle lock or sleep) while `fp` controls it with Share Input.
+#[tauri::command]
+fn set_stay_awake(app: Core, fp: String, on: bool) {
+    let mut cfg = app.cfg.lock().unwrap();
+    if on { cfg.let_sleep.remove(&fp) } else { cfg.let_sleep.insert(fp) };
+    drop(cfg);
     app.save();
 }
 
@@ -569,6 +589,12 @@ fn main() {
                         readvertise(&handle, &c);
                     }
                     sync_drop_zones(&handle, &c);
+                    audio::sync(&c);
+                    let awake = {
+                        let let_sleep = c.cfg.lock().unwrap().let_sleep.clone();
+                        c.sessions.lock().unwrap().iter().any(|(fp, x)| !x.origin && x.mode == Mode::Input && !let_sleep.contains(fp))
+                    };
+                    display::keep_awake(awake);
                 }
             });
 
@@ -600,7 +626,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

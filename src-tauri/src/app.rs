@@ -76,6 +76,10 @@ pub struct Config {
     pub sound: HashMap<String, bool>,
     /// Pointer speed multiplier while the mouse is on a device (peer fingerprint or "tablet"); 1.0 when unset.
     pub pointer: HashMap<String, f64>,
+    /// Computers (peer fingerprints) whose sound plays here while this computer controls them with Share Input.
+    pub hear: std::collections::HashSet<String>,
+    /// Computers allowed to let this one lock and sleep while they control it (by default it stays awake).
+    pub let_sleep: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -443,6 +447,9 @@ impl App {
                 "pending": self.moonlight_pending.lock().unwrap().values().map(|(v, _)| v.clone()).collect::<Vec<_>>(),
                 "devices": crate::modes::moonlight_devices(self, "tablet").into_iter().map(|(uuid, name)| json!({"uuid": uuid, "name": name})).collect::<Vec<_>>()},
             "sound": cfg.sound,
+            "hear": cfg.hear,
+            "let_sleep": cfg.let_sleep,
+            "hearing": crate::audio::status(),
             "pointer": cfg.pointer,
             "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),
