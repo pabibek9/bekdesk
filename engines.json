@@ -78,5 +78,13 @@
       "sha256": "e24210692b442b39af763536330ce78b423f19342b7a7792c26de3944e418b3a",
       "exe": "MttVDD.inf"
     }
+  },
+  "deskflow-rpm": {
+    "linux-x86_64": {
+      "version": "1.27.0 (Fedora 44)",
+      "url": "https://github.com/deskflow/deskflow/releases/download/v1.27.0/deskflow-1.27.0-fedora-44-x86_64.rpm",
+      "sha256": "71cdeec92e4351fced4cf907db5e936959a0923b2855284ca52d8cf1088205a9",
+      "exe": "deskflow-core"
+    }
   }
 }

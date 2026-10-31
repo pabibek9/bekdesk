@@ -35,7 +35,7 @@ jobs:
             args: "--target universal-apple-darwin"
           - os: ubuntu-22.04
             name: Linux
-            args: "--bundles rpm,appimage"
+            args: "--bundles rpm,deb,appimage"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Skip macOS unless tagged or requested
@@ -82,6 +82,7 @@ jobs:
             cp src-tauri/target/release/bundle/nsis/*.exe dist/bekdesk-Windows-x64-Setup.exe
           elif [ "${{ matrix.name }}" = "Linux" ]; then
             cp src-tauri/target/release/bundle/rpm/*.rpm dist/bekdesk-Linux-x86_64.rpm
+            cp src-tauri/target/release/bundle/deb/*.deb dist/bekdesk-Linux-amd64.deb
             cp src-tauri/target/release/bundle/appimage/*.AppImage dist/bekdesk-Linux-x86_64.AppImage
           else
             cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg dist/bekdesk-macOS-universal.dmg

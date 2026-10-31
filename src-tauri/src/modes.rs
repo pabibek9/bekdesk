@@ -41,8 +41,10 @@ pub async fn set_mode(app: &Arc<App>, fp: &str, mode: Mode) -> Result<()> {
     app.note(fp, "");
     app.cfg.lock().unwrap().modes.insert(fp.to_string(), mode);
     app.save();
-    let current = app.sessions.lock().unwrap().get(fp).map(|s| s.mode);
-    if current == Some(mode) && mode != Mode::Off {
+    // Already running in this direction: nothing to do. The same mode the other way round (that computer's
+    // keyboard and mouse controlling this one) is switched over so this computer's are shared instead.
+    let current = app.sessions.lock().unwrap().get(fp).map(|s| (s.mode, s.origin));
+    if current == Some((mode, true)) && mode != Mode::Off {
         return Ok(());
     }
     if current.is_some() {
@@ -463,9 +465,9 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         }
     }
     let conf = format!(
-        "sunshine_name = bekdesk {} for {}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
+        "sunshine_name = bekdesk {}{}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
         app.name().replace('\n', " "),
-        receiver.replace('\n', " "),
+        if receiver.is_empty() { String::new() } else { format!(" for {}", receiver.replace('\n', " ")) },
         fwd(&pkey),
         fwd(&cert),
         fwd(&apps),
@@ -867,7 +869,7 @@ async fn ensure_tablet_host(app: &Arc<App>) {
         } else {
             None
         };
-        let (child, respawn, _) = start_sunshine(app, "tablet", TABLET_PORT, output.as_deref(), "Moonlight", want == Mode::Off).await?;
+        let (child, respawn, _) = start_sunshine(app, "tablet", TABLET_PORT, output.as_deref(), "", want == Mode::Off).await?;
         let status = if want == Mode::Off { "Tablets and phones with Moonlight can find this computer" } else { "Ready — open Moonlight on the tablet" };
         let mut s = session(want, true, IpAddr::from([0, 0, 0, 0]), status);
         s.procs.push(child);
