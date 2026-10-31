@@ -1,3 +1,12 @@
+## bekdesk 0.1.18 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **See your version:** the bottom of the sidebar shows which bekdesk you're using.
+- **Updates:** bekdesk checks for a new version a minute after it starts and every six hours, or when you press **Check for updates**. When one is out, press **Update to …**: it downloads the right file for your computer, checks it against the release's checksums, installs it and reopens bekdesk (Windows and Linux; on a Mac the new disk image opens so you can drag it to Applications).
+- **Drag files and images to another computer:** while this computer shares its keyboard and mouse, a small blue box sits near the screen edge that faces each connected computer. Drag files or images onto it and they're sent there and put on that computer's clipboard, so you just press Ctrl+V (Cmd+V) where you want them.
+
 ## bekdesk 0.1.17 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

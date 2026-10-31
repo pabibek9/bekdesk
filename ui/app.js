@@ -89,7 +89,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   else if (sharing && S.me.scroll_lock) { msg = `<div class="hint warn">Scroll Lock is on, so the mouse stays on this PC.</div>`; act = `<button class="btn primary" data-scroll-lock="1">Turn off Scroll Lock</button>`; }
   else if (controlled) { msg = `<div class="hint ok">${name}'s keyboard and mouse are controlling this computer.</div>`; act = `<button class="btn primary" data-mode="input" data-fp="${esc(d.fp)}">Use this PC's keyboard &amp; mouse instead</button>`; }
   else if (sendFail) msg = sendFail;
-  else if (sharing) msg = `<div class="hint">Move the mouse off the edge toward ${name}. Manage Screens sets which edge.</div>`;
+  else if (sharing) msg = `<div class="hint">Move the mouse off the edge toward ${name}. To send files or images, drag them onto the blue box at that edge.</div>`;
   else if (!ses) msg = `<div class="hint">Drop files here to send them to ${name}.</div>`;
   // Something's wrong or still connecting: Reconnect is the obvious next step.
   const stuck = mode !== "off" && !busy[d.fp] && (d.note || pill[0] === "wait");
@@ -342,14 +342,17 @@ $("#device-list").addEventListener("change", async (e) => {
 });
 
 // Files dropped onto a device card are sent to that device.
-listen("tauri://drag-over", (e) => {
+// Only drops on this window: the edge drop zones are separate windows with their own handling.
+const thisWin = window.__TAURI__.webviewWindow?.getCurrentWebviewWindow?.();
+const onWin = (ev, f) => (thisWin ? thisWin.listen(ev, f) : listen(ev, f));
+onWin("tauri://drag-over", (e) => {
   const p = e.payload.position, r = window.devicePixelRatio || 1;
   const card = document.elementFromPoint(p.x / r, p.y / r)?.closest(".dev[data-fp]");
   document.querySelectorAll(".dev.drop").forEach((c) => c !== card && c.classList.remove("drop"));
   card?.classList.add("drop");
 });
-listen("tauri://drag-leave", () => document.querySelectorAll(".dev.drop").forEach((c) => c.classList.remove("drop")));
-listen("tauri://drag-drop", async (e) => {
+onWin("tauri://drag-leave", () => document.querySelectorAll(".dev.drop").forEach((c) => c.classList.remove("drop")));
+onWin("tauri://drag-drop", async (e) => {
   const p = e.payload.position, r = window.devicePixelRatio || 1;
   document.querySelectorAll(".dev.drop").forEach((c) => c.classList.remove("drop"));
   const card = document.elementFromPoint(p.x / r, p.y / r)?.closest(".dev[data-fp]");
@@ -745,6 +748,24 @@ $("#me").addEventListener("click", (e) => {
   i.addEventListener("keydown", (k) => { if (k.key === "Enter") done(true); if (k.key === "Escape") done(false); });
   i.addEventListener("blur", () => done(true));
 });
+// Sidebar: the version in use, and an update button when a newer one is out.
+function renderVersion() {
+  const u = S.update || {};
+  setHTML($("#ver"), `bekdesk ${esc(S.version || "")}` + (u.available
+    ? ` <button class="btn primary sm" id="do-update">Update to ${esc(u.available)}</button>`
+    : ` · <button class="link" id="check-update" title="${esc(u.error || "")}">${u.error ? "Couldn't check for updates" : "Check for updates"}</button>`));
+}
+$("#ver").addEventListener("click", async (e) => {
+  if (e.target.id === "check-update") {
+    e.target.textContent = "Checking…";
+    try { const v = await invoke("check_update"); toast(v ? `bekdesk ${v} is available` : "You have the newest version"); } catch (err) { toast(`Couldn't check for updates: ${err}`); }
+    refresh();
+  }
+  if (e.target.id === "do-update") {
+    e.target.disabled = true; e.target.textContent = "Downloading…";
+    try { await call("install_update"); } catch (_) { e.target.disabled = false; refresh(); }
+  }
+});
 $("#quit").addEventListener("click", (e) => { if (armed(e.currentTarget, "Press again to quit")) invoke("quit_app"); });
 $("#copy-addr").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(S.me.ip); toast(`Copied ${S.me.ip}`); } catch (_) { toast(`Your address is ${S.me.ip}`); }
@@ -763,6 +784,7 @@ $("#connect-form").addEventListener("submit", async (e) => {
 function render() {
   if (!S) return;
   renderMe();
+  renderVersion();
   const v = document.querySelector(".view.on").id;
   if (v === "devices") renderDevices();
   if (v === "workspace") renderWorkspace();
