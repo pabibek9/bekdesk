@@ -1,3 +1,9 @@
+## bekdesk 0.1.21 — preview
+
+### Changes
+- **A little Nepal in the look:** a boy in a Dhaka topi sits beside "Your address" on Nearby Devices; Manage Screens has Everest softly behind the screens and a girl in a kurtha with a pagoda temple in the lower corner. They never take clicks, so dragging screens works as before. The logo, colours, layout and every control are unchanged.
+- The Share Input hint no longer mentions the edge drop box, which 0.1.20 switched off.
+
 ## bekdesk 0.1.20 — preview
 
 ### Changes

@@ -99,7 +99,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   else if (sharing && S.me.scroll_lock) { msg = `<div class="hint warn">Scroll Lock is on, so the mouse stays on this PC.</div>`; act = `<button class="btn primary" data-scroll-lock="1">Turn off Scroll Lock</button>`; }
   else if (controlled) { msg = `<div class="hint ok">${name}'s keyboard and mouse are controlling this computer.</div>`; act = `<button class="btn primary" data-mode="input" data-fp="${esc(d.fp)}">Use this PC's keyboard &amp; mouse instead</button>`; }
   else if (sendFail) msg = sendFail;
-  else if (sharing) msg = `<div class="hint">Move the mouse off the edge toward ${name}. To send files or images, drag them onto the blue box at that edge.</div>`;
+  else if (sharing) msg = `<div class="hint">Move the mouse off the edge toward ${name}.</div>`;
   else if (!ses) msg = `<div class="hint">Drop files here to send them to ${name}.</div>`;
   // Something's wrong or still connecting: Reconnect is the obvious next step.
   const stuck = mode !== "off" && !busy[d.fp] && (d.note || pill[0] === "wait");
