@@ -184,6 +184,7 @@ fn block_device(app: Core, fp: String) {
 
 /// While this computer shares its keyboard and mouse with another, a small drop zone sits on the screen edge
 /// facing it (as placed in Manage Screens): drag files or images onto it and they go to that computer, ready to paste.
+#[allow(dead_code)]
 fn sync_drop_zones(app: &tauri::AppHandle, core: &App) {
     let want: Vec<(String, String, &str)> = core
         .sessions
@@ -504,6 +505,23 @@ fn vdd_command(args: &[String]) -> Option<i32> {
     }
 }
 
+/// Writes any panic to logs/crash.log in the data folder, so a crash leaves something to read.
+fn crash_log() {
+    let base = std::env::var_os("BEKDESK_DATA").map(PathBuf::from).or_else(|| {
+        let home = if cfg!(windows) { std::env::var_os("APPDATA").map(PathBuf::from) } else { std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")) };
+        home.map(|h| h.join("io.github.pabibek9.bekdesk"))
+    });
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(dir) = base.as_ref().map(|b| b.join("logs")) {
+            let _ = std::fs::create_dir_all(&dir);
+            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let line = format!("{ts} v{} panic: {info}
+", env!("CARGO_PKG_VERSION"));
+            let _ = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("crash.log")).and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+        }
+    }));
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 3 && args[1] == "--install-vdd" {
@@ -519,6 +537,7 @@ fn main() {
     }
     #[cfg(windows)]
     engines_die_with_us();
+    crash_log();
 
     let mut builder = tauri::Builder::default();
     // Opening bekdesk again (e.g. from the app menu on Linux, where GNOME shows no tray icon) shows the running one.
@@ -588,7 +607,7 @@ fn main() {
                         drop(m);
                         readvertise(&handle, &c);
                     }
-                    sync_drop_zones(&handle, &c);
+                    // The edge drop zone window is off until it is checked on real computers (see docs/RELEASE_NOTES.md).
                     audio::sync(&c);
                     let awake = {
                         let let_sleep = c.cfg.lock().unwrap().let_sleep.clone();
