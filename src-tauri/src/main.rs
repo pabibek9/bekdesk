@@ -162,6 +162,18 @@ fn block_device(app: Core, fp: String) {
     modes::stop_local(&app, &fp, false);
 }
 
+/// Device card → Details: what the logs say about the connection with `key` (a peer or "tablet").
+#[tauri::command]
+fn device_details(app: Core, key: String) -> String {
+    modes::connection_details(&app, &key)
+}
+
+/// Device card → "Turn off Scroll Lock" (Windows).
+#[tauri::command]
+fn toggle_scroll_lock() {
+    display::toggle_scroll_lock();
+}
+
 /// Sidebar → Quit: stop sharing and close bekdesk completely (there's no tray icon to quit from on some Linux desktops).
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
@@ -203,6 +215,7 @@ fn engines_die_with_us() {
 fn snapshot(app: Core) -> serde_json::Value {
     let mut v = app.snapshot();
     v["me"]["screens"] = display::screens();
+    v["me"]["scroll_lock"] = modes::scroll_locked(&app).into();
     v["layout"] = serde_json::to_value(modes::default_positions(&app)).unwrap_or_default();
     v
 }
@@ -492,7 +505,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, quit_app, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

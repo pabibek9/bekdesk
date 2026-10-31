@@ -1030,8 +1030,43 @@ fn keep_main_display(app: &App) {
 
 /// The last part of one of bekdesk's engine logs.
 fn log_tail(app: &App, name: &str) -> String {
+    tail_of(&app.dir.join("logs").join(name))
+}
+
+/// Whether Scroll Lock is keeping the pointer on this computer while it shares its keyboard and mouse (Windows):
+/// the key state itself, or the server having just refused to switch because of it.
+pub fn scroll_locked(app: &App) -> bool {
+    if !cfg!(windows) || !app.sessions.lock().unwrap().values().any(|s| s.origin && s.mode == Mode::Input) {
+        return false;
+    }
+    let fresh = std::fs::metadata(app.dir.join("logs").join("deskflow-server.log")).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d < Duration::from_secs(15));
+    display::scroll_lock_on() || (fresh && locked_in_log(&log_tail(app, "deskflow-server.log")))
+}
+
+/// The server's last word is "cursor is locked … check scroll lock key", with no switch since.
+fn locked_in_log(t: &str) -> bool {
+    t.rfind("cursor is locked to computer") > t.rfind("switch from")
+}
+
+/// Log files that tell how the connection with `key` (a peer or "tablet") is going, newest last.
+fn connection_logs(app: &App, key: &str) -> Vec<PathBuf> {
+    let logs = app.dir.join("logs");
+    let sunshine = |k: &str| app.dir.join("sunshine").join(&k[..k.len().min(12)]).join("sunshine.log");
+    if key == "tablet" {
+        return vec![sunshine("tablet")];
+    }
+    match app.sessions.lock().unwrap().get(key).map(|s| (s.mode, s.origin)) {
+        Some((Mode::Input, true)) => vec![logs.join("deskflow-server.log")],
+        Some((Mode::Input, false)) => vec![logs.join("deskflow-client.log")],
+        Some((_, true)) => vec![sunshine(key)],
+        Some((_, false)) => vec![logs.join("moonlight-pair.log"), logs.join("moonlight-stream.log")],
+        None => vec![],
+    }
+}
+
+fn tail_of(path: &Path) -> String {
     use std::io::{Read, Seek, SeekFrom};
-    let Ok(mut f) = std::fs::File::open(app.dir.join("logs").join(name)) else { return String::new() };
+    let Ok(mut f) = std::fs::File::open(path) else { return String::new() };
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
     let _ = f.seek(SeekFrom::Start(len.saturating_sub(8 * 1024)));
     let mut b = vec![];
@@ -1039,37 +1074,71 @@ fn log_tail(app: &App, name: &str) -> String {
     String::from_utf8_lossy(&b).into_owned()
 }
 
-/// Share Input problems the keyboard-sharing logs reveal, as plain advice on the device's card.
-fn input_hints(app: &App) {
-    let sessions: Vec<(String, bool)> = app.sessions.lock().unwrap().iter().filter(|(_, s)| s.mode == Mode::Input).map(|(fp, s)| (fp.clone(), s.origin)).collect();
-    for (fp, origin) in sessions {
-        let name = app.peer_name(&fp);
-        let hint = if origin {
-            let t = log_tail(app, "deskflow-server.log");
-            if t.contains("unrecognised client name") {
-                Some(format!("{name} connected under a name this computer doesn't expect. Press Reconnect; if it keeps happening, update bekdesk on both computers."))
-            } else if !t.contains("accepted client connection") && app.sessions.lock().unwrap().get(&fp).is_some_and(|s| s.since.elapsed().is_ok_and(|d| d > Duration::from_secs(20))) {
-                Some(format!("{name} hasn't connected yet. Check bekdesk is open there; on Linux, allow the \"remote control\" prompt. Then press Reconnect."))
-            } else {
-                None
-            }
-        } else {
-            let t = log_tail(app, "deskflow-client.log").to_lowercase();
-            let refused = (t.contains("eis") || t.contains("portal") || t.contains("remote desktop")) && (t.contains("fail") || t.contains("denied") || t.contains("error"));
-            refused.then(|| format!("This computer hasn't been allowed to be controlled. When asked to allow remote control, choose Allow, then press Reconnect on {name}."))
-        };
-        match hint {
-            Some(h) => app.note(&fp, h),
-            // Fixed now: drop advice this function gave earlier.
-            None if app.notes.lock().unwrap().get(&fp).is_some_and(|n| n.ends_with("press Reconnect.") || n.ends_with("Then press Reconnect.") || n.contains("on both computers.")) => app.note(&fp, ""),
-            None => {}
+/// Card → Details: bekdesk's own log lines about this device, then the last lines of its connection's logs.
+pub fn connection_details(app: &App, key: &str) -> String {
+    let name = if key == "tablet" { "tablet".to_string() } else { app.peer_name(key) };
+    let mine: Vec<String> = app.log.lock().unwrap().iter().filter(|l| l.contains(&name)).cloned().collect();
+    let mut out = mine[mine.len().saturating_sub(6)..].to_vec();
+    for p in connection_logs(app, key) {
+        let t = tail_of(&p);
+        let lines: Vec<&str> = t.lines().filter(|l| !l.trim().is_empty()).collect();
+        out.push(format!("── {}", p.file_name().unwrap_or_default().to_string_lossy()));
+        out.extend(lines[lines.len().saturating_sub(15)..].iter().map(|l| l.to_string()));
+    }
+    if out.is_empty() { "Nothing logged for this device yet.".into() } else { out.join("\n") }
+}
+
+/// What a connection's logs say is wrong, as plain advice ending in the one thing to do. `name` is the other device.
+pub fn diagnose(kind: (Mode, bool), log: &str, name: &str, waited: bool) -> Option<String> {
+    let low = log.to_lowercase();
+    let after = |bad: &str, good: &str| low.rfind(bad) > low.rfind(good);
+    match kind {
+        (Mode::Input, true) if low.contains("unrecognised client name") => Some(format!("{name} connected under a name this computer doesn't expect. Press Reconnect; if it keeps happening, update bekdesk on both computers.")),
+        (Mode::Input, true) if after("unresponsive", "switch from") => Some(format!("{name} connected but didn't finish setting up. On Linux, allow the remote-control prompt on {name}, then press Reconnect.")),
+        (Mode::Input, true) if waited && !low.contains("accepted client connection") => Some(format!("{name} hasn't connected yet. Check bekdesk is open on {name}; on Linux allow its remote-control prompt. Then press Reconnect.")),
+        (Mode::Input, false) if (low.contains("eis") || low.contains("portal")) && (low.contains("fail") || low.contains("denied")) => Some(format!("This computer hasn't been allowed to be controlled. When asked to allow remote control, choose Allow, then press Reconnect on {name}.")),
+        (Mode::Input, false) if after("failed to connect", "connected to server") => Some(format!("Couldn't reach {name}'s keyboard and mouse. Press Reconnect on {name}.")),
+        (Mode::Mirror | Mode::Extend, true) if after("couldn't run [", "executing do cmd") || after("exited with code [", "executing do cmd") || low.contains("failed to launch") => Some(format!("The extra screen for {name} couldn't be switched on. Press Reconnect; if it happens again, use Copy diagnostics.")),
+        (Mode::Mirror | Mode::Extend, true) if after("ssl verification error", "client connected") => Some(format!("{name} isn't paired with this computer's screen sharing any more (error 401). Press Reconnect; on a tablet, delete this PC in the app and pair again.")),
+        (Mode::Mirror | Mode::Extend, false) if after("connection terminated", "starting stream") || low.contains("network connection isn't performing well") => Some(format!("The picture from {name} dropped, usually because of a weak Wi-Fi signal. Press Reconnect.")),
+        _ => None,
+    }
+}
+
+// Devices whose card currently shows advice from `connection_hints`, so it can be cleared once things work.
+static HINTED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Puts the advice from `diagnose` on each device's card, and takes it away again once the problem is gone.
+fn connection_hints(app: &App) {
+    let mut keys: Vec<(String, (Mode, bool), bool)> = app
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(fp, s)| (fp.clone(), (s.mode, s.origin), s.since.elapsed().is_ok_and(|d| d > Duration::from_secs(20))))
+        .collect();
+    if let Some(s) = app.tablet_host.lock().unwrap().as_ref().filter(|s| s.mode != Mode::Off) {
+        keys.push(("tablet".into(), (s.mode, true), false));
+    }
+    let mut hinted = HINTED.lock().unwrap();
+    let mut now = vec![];
+    for (key, kind, waited) in keys {
+        let name = if key == "tablet" { "The tablet".to_string() } else { app.peer_name(&key) };
+        let log: String = connection_logs(app, &key).iter().map(|p| tail_of(p)).collect::<Vec<_>>().join("\n");
+        if let Some(h) = diagnose(kind, &log, &name, waited) {
+            app.note(&key, h);
+            now.push(key);
         }
     }
+    for gone in hinted.iter().filter(|k| !now.contains(k)) {
+        app.note(gone, "");
+    }
+    *hinted = now;
 }
 
 pub async fn tick(app: &Arc<App>) {
     keep_main_display(app);
-    input_hints(app);
+    connection_hints(app);
     hide_unused_virtual(app);
     // Restart crashed engines; a closed viewer ends its session and tells the origin.
     let mut ended = vec![];
@@ -1186,6 +1255,19 @@ pub async fn supervise(app: Arc<App>) {
         if n % 30 == 0 {
             probe_peers(&app).await;
         }
+        // Every ~10 s ask the computers we're connected with whether they're locked, so the card can say so.
+        if n % 5 == 2 {
+            let peers: Vec<String> = app.sessions.lock().unwrap().keys().cloned().collect();
+            for fp in peers {
+                let app = app.clone();
+                tokio::spawn(async move {
+                    if let Ok(h) = net::hello(&app, &fp).await {
+                        let mut l = app.locked.lock().unwrap();
+                        if h.locked { l.insert(fp); } else { l.remove(&fp); }
+                    }
+                });
+            }
+        }
         // Computers added by address aren't found by mDNS; keep them connected (and re-find them after a restart).
         if n % 15 == 1 {
             let manual = app.cfg.lock().unwrap().manual.clone();
@@ -1217,6 +1299,28 @@ mod tests {
         let list = [e("a", "tab"), e("b", "phone"), e("c", "tab"), e("d", "tab")];
         assert_eq!(duplicate_uuids(&list), vec!["a".to_string(), "c".to_string()]);
         assert!(duplicate_uuids(&[e("x", "1"), e("y", "2")]).is_empty());
+    }
+
+    #[test]
+    fn diagnoses_connection_logs() {
+        let d = |k, log: &str, waited| diagnose(k, log, "fedora", waited);
+        assert!(d((Mode::Input, true), "WARNING: unrecognised client name \"bk-x\", check server config", false).unwrap().contains("name"));
+        assert!(d((Mode::Input, true), "INFO: accepted client connection\nWARNING: new client is unresponsive", false).unwrap().contains("remote-control prompt"));
+        assert!(d((Mode::Input, true), "INFO: accepted client connection\nnew client is unresponsive\nINFO: switch from \"a\" to \"b\"", false).is_none());
+        assert!(d((Mode::Input, true), "", true).unwrap().contains("hasn't connected"));
+        assert!(d((Mode::Input, true), "", false).is_none());
+        assert!(d((Mode::Input, false), "ERROR: failed to connect to eis: denied", false).unwrap().contains("Allow"));
+        assert!(d((Mode::Extend, true), "Executing Do Cmd: [x]\nError: [x] exited with code [1]", false).unwrap().contains("extra screen"));
+        assert!(d((Mode::Extend, true), "Warning: SSL Verification error :: certificate", false).unwrap().contains("401"));
+        assert!(d((Mode::Mirror, false), "Connection terminated: -1", false).unwrap().contains("Wi-Fi"));
+        assert!(d((Mode::Mirror, true), "all fine", true).is_none());
+    }
+
+    #[test]
+    fn scroll_lock_from_log() {
+        assert!(locked_in_log("INFO: cursor is locked to computer, check scroll lock key"));
+        assert!(!locked_in_log("cursor is locked to computer, check scroll lock key\nINFO: switch from \"a\" to \"b\" at 0,1"));
+        assert!(!locked_in_log("nothing"));
     }
 
     #[test]

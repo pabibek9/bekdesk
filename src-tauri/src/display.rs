@@ -48,6 +48,21 @@ mod win {
         (unsafe { GetCursorPos(&mut p) } != 0).then_some((p.x, p.y))
     }
 
+    /// Whether Scroll Lock is on (Deskflow keeps the pointer on this computer while it is).
+    pub fn scroll_lock_on() -> bool {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_SCROLL};
+        unsafe { GetKeyState(VK_SCROLL as i32) & 1 != 0 }
+    }
+
+    /// Press and release Scroll Lock, as if on the keyboard.
+    pub fn toggle_scroll_lock() {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_SCROLL};
+        unsafe {
+            keybd_event(VK_SCROLL as u8, 0x46, KEYEVENTF_EXTENDEDKEY, 0);
+            keybd_event(VK_SCROLL as u8, 0x46, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
+        }
+    }
+
     /// Windows pointer speed, 1..=20 (10 = no scaling).
     pub fn mouse_speed() -> Option<u32> {
         use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETMOUSESPEED};
@@ -464,7 +479,7 @@ mod win {
 }
 
 #[cfg(windows)]
-pub use win::{cursor_pos, describe, modes, rotate, screens, set_resolution, turn_off, display_at, move_display, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
+pub use win::{scroll_lock_on, toggle_scroll_lock, cursor_pos, describe, modes, rotate, screens, set_resolution, turn_off, display_at, move_display, vdd_attached, real_display, primary_refresh, ensure_installed, mouse_speed, set_mouse_speed, install_elevated, primary_name, set_mode, set_primary, update_modes, vdd_display, vdd_rect};
 
 #[cfg(not(windows))]
 pub fn vdd_display() -> Option<String> {
@@ -502,6 +517,12 @@ pub fn describe() -> String {
 pub fn primary_refresh() -> Option<u32> {
     None
 }
+#[cfg(not(windows))]
+pub fn scroll_lock_on() -> bool {
+    false
+}
+#[cfg(not(windows))]
+pub fn toggle_scroll_lock() {}
 #[cfg(not(windows))]
 pub fn cursor_pos() -> Option<(i32, i32)> {
     None
@@ -551,6 +572,33 @@ pub fn update_modes(_: &std::path::Path, _: &std::path::Path) -> Result<()> {
 #[cfg(not(windows))]
 pub fn install_elevated(_: &std::path::Path) -> Result<()> {
     anyhow::bail!("unsupported")
+}
+
+/// Whether this computer's lock screen is showing. Linux asks logind (GNOME, KDE and others report it);
+/// macOS isn't detected yet and reports unlocked.
+pub fn is_locked() -> bool {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop, SwitchDesktop, DESKTOP_SWITCHDESKTOP};
+        // The lock screen runs on the secure desktop, which a normal program can't open or switch to.
+        let h = OpenInputDesktop(0, 0, DESKTOP_SWITCHDESKTOP);
+        if h.is_null() {
+            return true;
+        }
+        let ok = SwitchDesktop(h) != 0;
+        CloseDesktop(h);
+        !ok
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let id = std::env::var("XDG_SESSION_ID").unwrap_or_else(|_| "auto".into());
+        std::process::Command::new("loginctl")
+            .args(["show-session", &id, "-p", "LockedHint", "--value"])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "yes")
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    false
 }
 
 /// "laptop" if the machine has a built-in battery, else "desktop"; drives the device frame in Manage Screens.

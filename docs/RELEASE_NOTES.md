@@ -1,3 +1,15 @@
+## bekdesk 0.1.17 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Scroll Lock warning (Windows):** while this PC shares its keyboard and mouse, Scroll Lock keeps the mouse from leaving the screen. The device card now says "Scroll Lock is on, so the mouse stays on this PC" with a **Turn off Scroll Lock** button.
+- **Every card says what's wrong and what to do:** in plain words, from what the connection actually reports, e.g. the other computer connected but didn't finish setting up (allow the remote-control prompt on Linux), connected under a name this PC doesn't expect, hasn't connected yet, wasn't allowed to be controlled, the extra screen couldn't switch on, the picture dropped (Wi-Fi), a tablet isn't paired any more (401), or a file didn't send. "Can't reach" now names the exact firewall step for the other computer's system (Windows, macOS or Fedora). A **Details** link on the card shows the latest log lines for that connection.
+- **Locked or asleep:** a connected computer that is locked shows **Locked** and "fedora is locked. Unlock it on that computer to continue." (Windows and Linux report this; macOS doesn't yet). A known computer that's off the network shows **Asleep or off** and that it reconnects by itself.
+- **Simpler screens:** each card shows one message and one button at a time; mouse speed, sound, Reconnect (when nothing's wrong), Forget, and the tablet's paired devices and tips are under **More**. Shorter mode labels ("This PC's keyboard & mouse", "Extra screen", "Same screen", "Not connected"); "Can't see a computer?" folds the address box away; Connections has a short Troubleshooting box with **Copy diagnostics** first.
+- **Screen numbers:** only this PC's screens are numbered in Manage Screens, so another device no longer shows a second "1 Main".
+- **Phones and tablets as keyboard/mouse targets:** researched, not built yet; see docs/ANDROID_INPUT.md.
+
 ## bekdesk 0.1.16 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.

@@ -20,7 +20,7 @@
 
   <main>
     <section id="devices" class="view on">
-      <header class="split"><div><h1>Nearby Devices</h1><p class="sub">Your other computers show up here when bekdesk is open on them and they are on the same Wi-Fi or network.</p></div><button class="btn" id="scan">Scan</button></header>
+      <header class="split"><div><h1>Nearby Devices</h1><p class="sub">Computers with bekdesk open on the same Wi-Fi appear here. Pick what each one should do.</p></div><button class="btn" id="scan">Scan</button></header>
       <div class="card addr">
         <div class="addr-me">
           <div class="small">Your address</div>
@@ -28,10 +28,12 @@
           <div class="small" id="addr-id"></div>
         </div>
         <div class="addr-act"><button class="btn" id="copy-addr">Copy address</button></div>
-        <form class="addr-connect" id="connect-form" autocomplete="off">
-          <div class="small">Can't see a computer below? Type the address shown on it.</div>
-          <div class="pinrow"><input id="connect-host" placeholder="e.g. 192.168.1.23" spellcheck="false" /><button class="btn primary" id="connect-btn" type="submit">Connect</button></div>
-        </form>
+        <details class="addr-connect"><summary>Can't see a computer?</summary>
+          <form id="connect-form" autocomplete="off">
+            <div class="small">Type the address shown on it (under "Your address").</div>
+            <div class="pinrow"><input id="connect-host" placeholder="e.g. 192.168.1.23" spellcheck="false" /><button class="btn primary" id="connect-btn" type="submit">Connect</button></div>
+          </form>
+        </details>
       </div>
       <div id="components" class="components hidden"><span></span><div class="bar"><i></i></div></div>
       <div id="empty" class="card start hidden">
@@ -48,15 +50,17 @@
     </section>
 
     <section id="workspace" class="view">
-      <header class="split"><div><h1>Manage Screens</h1><p class="sub">Drag each device to where it sits on your desk. A tablet you extend to appears as an extra monitor on the side you put it; with Share Input the pointer crosses the edges that touch.</p></div><button class="btn" id="identify" title="Show a big number on each of this computer's screens">Identify screens</button></header>
+      <header class="split"><div><h1>Manage Screens</h1><p class="sub">Drag each device to where it sits on your desk. Right-click one of this PC's screens for more.</p></div><button class="btn" id="identify" title="Show a big number on each of this computer's screens">Identify screens</button></header>
       <div id="canvas" class="canvas"><div id="ws-hint" class="ws-hint hidden">Connect another computer, or add a tablet or phone under Nearby Devices, and it appears here. Right-click a screen to manage it.</div></div>
     </section>
 
     <section id="activity" class="view">
-      <header><h1>Connections</h1><p class="sub">What is connected right now, files being sent, and a log for troubleshooting.</p></header>
+      <header><h1>Connections</h1><p class="sub">What's connected right now, and files being sent.</p></header>
       <h2>Active now</h2><div id="sessions" class="list"></div>
       <h2>Transfers</h2><div id="transfers" class="list"></div>
-      <h2>Log <button class="link" data-open="logs">Open logs</button> <button class="link" id="diag">Copy diagnostics</button></h2><pre id="log" class="log"></pre>
+      <h2>Troubleshooting</h2>
+      <div class="card small">Something not working? Press <button class="link" id="diag">Copy diagnostics</button> and paste it when you ask for help, or <button class="link" data-open="logs">open the log folder</button>.
+        <details class="more"><summary>Show the log</summary><pre id="log" class="log"></pre></details></div>
     </section>
 
     <section id="settings" class="view">
@@ -69,7 +73,7 @@
       <h2>Devices</h2><div id="trusted" class="list"></div>
       <h2>Blocked devices</h2><div id="blocked" class="list"></div>
       <h2>About</h2>
-      <div class="card small">bekdesk 0.1.16 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.<div id="links" class="links"></div></div>
+      <div class="card small">bekdesk 0.1.17 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.<div id="links" class="links"></div></div>
     </section>
   </main>
 
