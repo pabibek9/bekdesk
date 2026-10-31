@@ -156,6 +156,8 @@ pub struct App {
     pub notes: Mutex<HashMap<String, String>>,
     /// Advertised peers that stopped answering (e.g. crashed without an mDNS goodbye).
     pub stale: Mutex<HashSet<String>>,
+    /// Peers whose lock screen is showing, as they last reported.
+    pub locked: Mutex<HashSet<String>>,
     pub log: Mutex<VecDeque<String>>,
     pub clip_last: Mutex<u64>,
     pub attempts: Mutex<HashMap<String, Instant>>,
@@ -201,6 +203,7 @@ impl App {
             transfers: Default::default(),
             notes: Default::default(),
             stale: Default::default(),
+            locked: Default::default(),
             log: Default::default(),
             clip_last: Default::default(),
             attempts: Default::default(),
@@ -358,7 +361,13 @@ impl App {
     }
 
     pub fn hello(&self) -> crate::net::Hello {
-        crate::net::Hello { name: self.name(), os: Self::os().into(), kind: crate::display::device_kind().into(), monitors: self.monitors.lock().unwrap().chars().take(200).collect() }
+        crate::net::Hello {
+            name: self.name(),
+            os: Self::os().into(),
+            kind: crate::display::device_kind().into(),
+            monitors: self.monitors.lock().unwrap().chars().take(200).collect(),
+            locked: crate::display::is_locked(),
+        }
     }
 
     /// Short, easy-to-read number for this computer, derived from its identity (like a remote-desktop ID).
@@ -409,6 +418,7 @@ impl App {
                     "kind": p.map(|p| p.kind.clone()).unwrap_or_default(),
                     "trusted": t.is_some(),
                     "once": once.contains(fp),
+                    "locked": self.locked.lock().unwrap().contains(fp),
                     "caps": t.map(|t| t.caps),
                     "mode": cfg.modes.get(fp).copied().unwrap_or_default(),
                     "session": sessions.get(fp),

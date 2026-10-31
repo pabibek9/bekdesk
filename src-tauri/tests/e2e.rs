@@ -100,6 +100,9 @@ async fn connect_by_address_learns_the_peer() {
     assert_eq!(fp, b.id.fp);
     let p = a.peer(&fp).unwrap();
     assert_eq!((p.name.as_str(), p.port), ("Beta", b.port));
+    // It answers "who are you" (incl. whether it's locked) once known.
+    let h = net::hello(&a, &fp).await.unwrap();
+    assert_eq!(h.name, "Beta");
     // Not trusted yet: adding by address grants nothing.
     assert!(!a.knows(&fp));
     assert!(net::connect_address(&a, "").await.is_err());

@@ -57,6 +57,9 @@ pub struct Hello {
     pub os: String,
     pub kind: String,
     pub monitors: String,
+    /// Its lock screen is showing (older bekdesk versions don't say).
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -308,10 +311,16 @@ pub async fn open(app: &App, fp: &str) -> Result<(Stream, IpAddr)> {
             Err(_) => last = anyhow::anyhow!("timed out"),
         }
     }
-    Err(last.context(format!(
-        "can't reach {}. Make sure bekdesk is open there, both are on the same Wi-Fi, and Windows Firewall allows bekdesk on Private networks",
-        p.name
-    )))
+    Err(last.context(format!("can't reach {}. Make sure bekdesk is open there and both are on the same Wi-Fi. {}", p.name, firewall_hint(&p.os))))
+}
+
+/// The one firewall step for a computer running `os` that lets bekdesk (port 47290) through.
+pub fn firewall_hint(os: &str) -> &'static str {
+    match os {
+        "linux" => "If it still can't connect, run this on it: sudo firewall-cmd --permanent --add-port=47290/tcp --add-service=mdns && sudo firewall-cmd --reload",
+        "macos" => "If it still can't connect: on it open System Settings → Network → Firewall → Options and allow bekdesk.",
+        _ => "If it still can't connect: on it open Windows Security → Firewall & network protection → Allow an app through firewall, and tick bekdesk for Private.",
+    }
 }
 
 pub async fn request(app: &App, fp: &str, req: &Req) -> Result<(Stream, IpAddr)> {
@@ -376,6 +385,14 @@ pub async fn connect_address(app: &Arc<App>, host: &str) -> Result<String> {
 }
 
 /// Ask an untrusted peer to approve us. Their answer (once/always) is mirrored locally.
+/// Asks a known peer about itself (used to notice when it's locked).
+pub async fn hello(app: &App, fp: &str) -> Result<Hello> {
+    let (mut s, _) = open(app, fp).await?;
+    write_msg(&mut s, &Req::Hello).await?;
+    let r: Resp = timeout(Duration::from_secs(10), read_msg(&mut s)).await??;
+    r.info.context("no answer")
+}
+
 pub async fn pair(app: &App, fp: &str) -> Result<()> {
     let p = app.peer(fp).context("device is offline")?;
     app.note(fp, format!("Confirm code {} on {}", app.code_with(fp), p.name));
