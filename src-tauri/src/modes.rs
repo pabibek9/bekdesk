@@ -1028,8 +1028,48 @@ fn keep_main_display(app: &App) {
     }
 }
 
+/// The last part of one of bekdesk's engine logs.
+fn log_tail(app: &App, name: &str) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(app.dir.join("logs").join(name)) else { return String::new() };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = f.seek(SeekFrom::Start(len.saturating_sub(8 * 1024)));
+    let mut b = vec![];
+    let _ = f.read_to_end(&mut b);
+    String::from_utf8_lossy(&b).into_owned()
+}
+
+/// Share Input problems the keyboard-sharing logs reveal, as plain advice on the device's card.
+fn input_hints(app: &App) {
+    let sessions: Vec<(String, bool)> = app.sessions.lock().unwrap().iter().filter(|(_, s)| s.mode == Mode::Input).map(|(fp, s)| (fp.clone(), s.origin)).collect();
+    for (fp, origin) in sessions {
+        let name = app.peer_name(&fp);
+        let hint = if origin {
+            let t = log_tail(app, "deskflow-server.log");
+            if t.contains("unrecognised client name") {
+                Some(format!("{name} connected under a name this computer doesn't expect. Press Reconnect; if it keeps happening, update bekdesk on both computers."))
+            } else if !t.contains("accepted client connection") && app.sessions.lock().unwrap().get(&fp).is_some_and(|s| s.since.elapsed().is_ok_and(|d| d > Duration::from_secs(20))) {
+                Some(format!("{name} hasn't connected yet. Check bekdesk is open there; on Linux, allow the \"remote control\" prompt. Then press Reconnect."))
+            } else {
+                None
+            }
+        } else {
+            let t = log_tail(app, "deskflow-client.log").to_lowercase();
+            let refused = (t.contains("eis") || t.contains("portal") || t.contains("remote desktop")) && (t.contains("fail") || t.contains("denied") || t.contains("error"));
+            refused.then(|| format!("This computer hasn't been allowed to be controlled. When asked to allow remote control, choose Allow, then press Reconnect on {name}."))
+        };
+        match hint {
+            Some(h) => app.note(&fp, h),
+            // Fixed now: drop advice this function gave earlier.
+            None if app.notes.lock().unwrap().get(&fp).is_some_and(|n| n.ends_with("press Reconnect.") || n.ends_with("Then press Reconnect.") || n.contains("on both computers.")) => app.note(&fp, ""),
+            None => {}
+        }
+    }
+}
+
 pub async fn tick(app: &Arc<App>) {
     keep_main_display(app);
+    input_hints(app);
     hide_unused_virtual(app);
     // Restart crashed engines; a closed viewer ends its session and tells the origin.
     let mut ended = vec![];
