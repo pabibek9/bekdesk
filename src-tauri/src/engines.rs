@@ -60,12 +60,38 @@ fn find(dir: &Path, exe: &str) -> Option<PathBuf> {
     None
 }
 
+/// What an engine does, in words for people (the UI never names the projects bekdesk builds on).
+pub fn purpose(name: &str) -> &'static str {
+    match name {
+        "deskflow" | "deskflow-rpm" => "keyboard & mouse sharing",
+        "sunshine" => "screen sharing",
+        "moonlight" => "screen viewer",
+        "vdd" => "the virtual screen",
+        _ => "a bekdesk component",
+    }
+}
+
 /// Returns the engine's executable (or INF for the display driver), downloading it if needed.
 pub async fn ensure(app: &App, name: &str, note_key: &str) -> Result<PathBuf> {
-    // Linux: a Deskflow installed with the system's package manager is used as is.
+    // Linux: use a Deskflow that is already installed (package manager, or the Flatpak installed by hand); on
+    // Fedora 44 install Deskflow's own small package with the usual password prompt; otherwise fall through to
+    // the Flatpak bundle below (installed for this user, no password, but a large first download).
     if cfg!(target_os = "linux") && name == "deskflow" {
-        if let Some(p) = std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path).map(|d| d.join("deskflow-core")).find(|p| p.is_file())) {
+        let on_path = || std::env::var_os("PATH").and_then(|path| std::env::split_paths(&path).map(|d| d.join("deskflow-core")).find(|p| p.is_file()));
+        if let Some(p) = on_path() {
             return Ok(p);
+        }
+        if std::process::Command::new("flatpak").args(["info", "org.deskflow.deskflow"]).output().is_ok_and(|o| o.status.success()) {
+            let dir = app.dir.join("engines").join("deskflow-flatpak");
+            std::fs::create_dir_all(&dir)?;
+            return flatpak_launcher(&dir, &app.dir);
+        }
+        let os = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+        if os.lines().any(|l| l == "ID=fedora") && os.lines().any(|l| l == "VERSION_ID=44") {
+            let _ = Box::pin(ensure(app, "deskflow-rpm", note_key)).await;
+            if let Some(p) = on_path() {
+                return Ok(p);
+            }
         }
     }
     let p = pkg(name).with_context(|| match name {
@@ -77,7 +103,7 @@ pub async fn ensure(app: &App, name: &str, note_key: &str) -> Result<PathBuf> {
     if !dir.join(".ok").exists() {
         let r = install(app, name, &p, &dir, note_key).await;
         app.note(note_key, "");
-        r.with_context(|| format!("installing {name} {}", p.version))?;
+        r.with_context(|| format!("setting up {}", purpose(name)))?;
     }
     find(&dir, &p.exe).with_context(|| format!("{} missing from {name} package", p.exe))
 }
@@ -99,7 +125,7 @@ async fn install(app: &App, name: &str, p: &Pkg, dir: &Path, note_key: &str) -> 
         let pct = if total > 0 { got * 100 / total } else { 0 };
         if pct != last_pct {
             last_pct = pct;
-            app.note(note_key, format!("Downloading {name} {} — {pct}%", p.version));
+            app.note(note_key, format!("Setting up {} (one-time download) — {pct}%", purpose(name)));
         }
     }
     out.flush().await?;
@@ -108,7 +134,11 @@ async fn install(app: &App, name: &str, p: &Pkg, dir: &Path, note_key: &str) -> 
         let _ = std::fs::remove_dir_all(dir);
         bail!("checksum mismatch for {}", p.url);
     }
-    app.note(note_key, format!("Installing {name} {}", p.version));
+    app.note(note_key, match file.extension().and_then(|e| e.to_str()) {
+        Some("rpm") => "Setting up keyboard & mouse sharing: type your password in the window that opens".to_string(),
+        Some("flatpak") => "Setting up keyboard & mouse sharing: the first time this downloads about 1 GB and can take 10 minutes or more".to_string(),
+        _ => format!("Setting up {}…", purpose(name)),
+    });
     let (f2, d2) = (file.clone(), dir.to_path_buf());
     tokio::task::spawn_blocking(move || extract(&f2, &d2)).await??;
     let _ = std::fs::remove_file(&file);
@@ -146,18 +176,14 @@ fn extract(file: &Path, dir: &Path) -> Result<()> {
             let ok = |args: &[&str]| std::process::Command::new("flatpak").args(args).status().is_ok_and(|s| s.success());
             ok(&["remote-add", "--user", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"]);
             if !ok(&["install", "--user", "-y", "--noninteractive", &file.to_string_lossy()]) {
-                bail!("flatpak couldn't install Deskflow (is flatpak installed?)");
+                bail!("couldn't install it (is flatpak installed?)");
             }
-            let data = dir.parent().and_then(Path::parent).context("bad engine folder")?;
-            let launcher = dir.join("deskflow-core");
-            std::fs::write(
-                &launcher,
-                format!("#!/bin/sh\nexec flatpak run --die-with-parent --filesystem='{}' --command=deskflow-core org.deskflow.deskflow \"$@\"\n", data.display()),
-            )?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
+            flatpak_launcher(dir, dir.parent().and_then(Path::parent).context("bad engine folder")?)?;
+        }
+        // Fedora: Deskflow's own package, installed system-wide after the normal password prompt.
+        "rpm" => {
+            if !std::process::Command::new("pkexec").args(["dnf", "install", "-y"]).arg(file).status().is_ok_and(|s| s.success()) {
+                bail!("it wasn't installed (password prompt cancelled or dnf failed)");
             }
         }
         // Linux viewer: Moonlight's AppImage runs as is (main() makes AppImages run without FUSE).
@@ -220,6 +246,19 @@ pub fn moonlight_home(app: &App, exe: &Path) -> PathBuf {
         }
     }
     home
+}
+
+/// A `deskflow-core` launcher for the Deskflow Flatpak, with access to bekdesk's folder (`data`) where its
+/// settings files are written.
+fn flatpak_launcher(dir: &Path, data: &Path) -> Result<PathBuf> {
+    let launcher = dir.join("deskflow-core");
+    std::fs::write(&launcher, format!("#!/bin/sh\nexec flatpak run --die-with-parent --filesystem='{}' --command=deskflow-core org.deskflow.deskflow \"$@\"\n", data.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(launcher)
 }
 
 /// Engines left running by an earlier bekdesk (crash, update, uninstall) keep serving old streams and lock

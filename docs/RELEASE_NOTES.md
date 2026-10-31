@@ -1,3 +1,13 @@
+## bekdesk 0.1.15 — preview
+
+**Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
+
+### Changes
+- **Choose whose keyboard and mouse are shared:** **Share Input** now says "Use this PC's keyboard & mouse": the computer where you press it is the one whose keyboard and mouse move to the others. When another computer is controlling this one, its card says "Controlled by …" and offers **Use this PC's keyboard & mouse instead**, which switches the direction in one click.
+- **Linux setup that doesn't look stuck:** keyboard & mouse sharing uses what's already installed; on Fedora 44 it installs a small package after your normal password prompt; otherwise it says plainly that the first download is large and can take a while.
+- **Simpler:** **Forget this computer** right on its card in Nearby Devices; permissions in Settings are folded away (everything is allowed by default); setup messages describe what's being set up instead of naming components; tablets see this computer as "bekdesk <name>".
+- **Debian/Ubuntu package:** releases now include `bekdesk-Linux-amd64.deb` as well as the Fedora `.rpm` and the `.AppImage`.
+
 ## bekdesk 0.1.14 — preview
 
 **Install it yourself by double-clicking the installer** (not from inside another app), so Windows registers it normally with its icon.
