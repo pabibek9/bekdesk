@@ -253,20 +253,86 @@ body { animation: appIn .55s var(--spring) both; }
 .nav .ver button.link { padding: 0; background: none; font-size: 12px; color: var(--accent); display: inline; }
 .nav .ver button.btn { color: var(--panel); }
 
-/* ---- Nepal artwork: the boy beside "Your address", Everest and the kurtha girl in Manage Screens ---- */
-.addr { grid-template-columns: 1fr auto auto; padding-bottom: 0; overflow: hidden; }
-.addr-me, .addr-act { padding-bottom: 14px; align-self: center; }
-.addr-connect { grid-column: 1 / 3; margin-bottom: 14px; }
-.addr-art { grid-column: 3; grid-row: 1 / span 2; align-self: end; height: 168px; width: auto; margin-right: -4px; pointer-events: none; }
-@media (max-width: 860px) { .addr-art { height: 132px; } }
-@media (max-width: 680px) { .addr-art { display: none; } .addr-connect { grid-column: 1 / -1; } }
-.canvas { isolation: isolate; }
+/* ---- Nepal look: soft blue-white surfaces, illustrations from Nepal's heritage ---- */
+:root { --bg: #f5f7fb; --line: #e3e8f1; --hover: #eef2f9; --accent: #1f5eff; --ink2: #5a6478; --ink3: #8d97a9;
+  --shadow: 0 1px 2px rgba(20,40,90,.04), 0 6px 20px rgba(20,40,90,.06); }
+@media (prefers-color-scheme: dark) { :root { --bg: #0d0f14; --line: #262b36; --hover: #1b2030; --accent: #6b93ff; --ink2: #a4abbb; --ink3: #6b7385; } }
+.card, .dev, .components, .canvas { box-shadow: var(--shadow); border-radius: 16px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+
+/* sidebar: icons, blue selection, Boudhanath above the profile */
+.nav { padding-bottom: 0; isolation: isolate; }
+.nav button[data-view] { display: flex; align-items: center; gap: 10px; }
+.ni { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.7; flex: none; }
+.nav button.on { color: var(--accent); }
+.nav-ind { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.nav-art { flex: 1 1 auto; min-height: 120px; margin: 12px -12px 0; pointer-events: none;
+  background: url(art/sidebar.webp) center bottom / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%); mask-image: linear-gradient(to bottom, transparent, #000 45%); }
+#me { margin: 0 -12px; padding: 12px 14px 4px 58px; position: relative; background: var(--panel); border-top: 1px solid var(--line); }
+#me::before { content: ""; position: absolute; left: 14px; top: 12px; width: 34px; height: 34px; border-radius: 50%; background: #fdf1e7 url(art/avatar.webp) center / 30px no-repeat; box-shadow: 0 0 0 1px var(--line); }
+.ver, .nav .quit { position: relative; margin-left: 0; margin-right: -12px; padding-left: 58px; background: var(--panel); }
+.ver { margin-bottom: 0; padding-bottom: 4px; } .nav .quit { margin-bottom: 0; padding-bottom: 14px; border-radius: 0; }
+@media (prefers-color-scheme: dark) { .nav-art { opacity: .35; } }
+
+/* Nearby Devices: address card with the manual-connect panel; the boy sits at its right */
+.addr { grid-template-columns: auto 1fr auto; padding: 0; overflow: hidden; gap: 0 14px; }
+.addr .wifi { margin: 16px 0 16px 18px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.addr .wifi svg { stroke: var(--accent); }
+.addr-me { padding: 14px 0; } .addr-act { padding-right: 16px; }
+.addr-connect { grid-column: 1 / -1; position: relative; min-height: 132px; padding: 14px 18px 16px; border-top: 1px solid var(--line);
+  background: linear-gradient(90deg, var(--panel) 0%, color-mix(in srgb, var(--panel) 94%, transparent) 40%, color-mix(in srgb, var(--panel) 55%, transparent) 70%, color-mix(in srgb, var(--panel) 20%, transparent) 100%), url(art/himalaya-dawn.webp) 70% 78% / cover no-repeat; }
+.addr-connect summary { font-weight: 600; color: var(--ink); }
+.addr-connect form { position: relative; z-index: 1; max-width: calc(100% - 190px); }
+.addr-connect input { width: 260px; max-width: 100%; }
+.addr-art { position: absolute; right: 22px; bottom: 0; height: 150px; width: auto; pointer-events: none; }
+.addr-connect:not([open]) { min-height: 0; } .addr-connect:not([open]) .addr-art { display: none; }
+@media (max-width: 860px) { .addr-art { height: 118px; } .addr-connect form { max-width: calc(100% - 140px); } }
+@media (max-width: 680px) { .addr-art { display: none; } .addr-connect form { max-width: none; } }
+@media (prefers-color-scheme: dark) { .addr-connect { background: linear-gradient(90deg, var(--panel) 30%, color-mix(in srgb, var(--panel) 75%, transparent)), url(art/himalaya-dawn.webp) 70% 78% / cover no-repeat; } }
+
+/* device cards: icon tiles and mode buttons with icons */
+.dev .ico { background: #1d2230; } .dev .ico svg { stroke: #d6dcea; }
+.dev.live .ico { background: #1d2230; }
+.seg button { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--panel); }
+.seg button .mi { grid-row: 1 / span 2; width: 18px; height: 18px; stroke: var(--ink2); fill: none; stroke-width: 1.7; }
+.seg button.on .mi { stroke: var(--accent); }
+.seg button.on b { color: var(--accent); }
+
+/* Manage Screens: Everest across the top of the canvas; the kurtha girl with her temple in the lower right */
+.canvas { isolation: isolate; background-color: var(--panel); background-image: none; }
 .canvas::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: url(art/everest.webp) center 28% / cover no-repeat;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.55) 40%, #000 75%);
-  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,.55) 40%, #000 75%); opacity: .55; }
-.canvas::after { content: ""; position: absolute; right: 10px; bottom: 0; z-index: 0; pointer-events: none;
+  background: linear-gradient(to bottom, transparent 45%, var(--panel) 92%), url(art/everest.webp) center top / cover no-repeat; }
+.canvas::after { content: ""; position: absolute; right: 8px; bottom: 0; z-index: 0; pointer-events: none;
   width: min(300px, 38%); aspect-ratio: 720 / 446; background: url(art/kurtha-temple.webp) right bottom / contain no-repeat; }
 .group, .ws-hint { z-index: 1; }
 .ws-hint { left: 6%; width: 58%; transform: none; }
-@media (prefers-color-scheme: dark) { .canvas::before { opacity: .16; } }
+@media (prefers-color-scheme: dark) { .canvas::before { opacity: .22; } }
+
+/* Connections: Pashupatinath band under the title. Settings: Boudhanath at the right of the device card. */
+.band { height: 104px; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); margin: -6px 0 6px;
+  background: linear-gradient(90deg, var(--panel) 0%, color-mix(in srgb, var(--panel) 70%, transparent) 30%, transparent 70%), url(art/pashupati.webp) right 62% / cover no-repeat; }
+.setdev { overflow: hidden; }
+.setdev::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 38%; z-index: 0; pointer-events: none;
+  background: linear-gradient(90deg, var(--panel), transparent 55%), url(art/janaki.webp) 42% 58% / cover no-repeat; }
+.setdev > * { position: relative; z-index: 1; }
+@media (max-width: 680px) { .setdev::after { opacity: .35; } }
+@media (prefers-color-scheme: dark) { .band, .setdev::after { opacity: .4; } }
+
+/* Settings: one card per section, an icon tile on the left */
+.scard { position: relative; display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; margin-bottom: 12px; }
+.stile { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--hover); }
+.stile svg { width: 18px; height: 18px; stroke: var(--ink2); fill: none; stroke-width: 1.7; }
+.sbody { flex: 1; min-width: 0; }
+.sbody h3 { margin: 6px 0 10px; font-size: 14px; font-weight: 650; }
+.sbody.form { gap: 10px; }
+.srow + .srow { border-top: 1px solid var(--line); padding-top: 12px; }
+.ico.dark { background: #1d2230; } .ico.dark svg { stroke: #d6dcea; }
+.perm .caps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-top: 10px; }
+.perm .caps label { align-items: flex-start; gap: 9px; }
+.perm .caps input { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--accent); }
+.perm .caps b { display: block; color: var(--ink); font-weight: 600; font-size: 13px; }
+.perm .caps small { display: block; font-size: 11.5px; color: var(--ink3); }
+.perm summary { font-weight: 600; color: var(--ink); }
+@media (max-width: 760px) { .perm .caps { grid-template-columns: 1fr; } }

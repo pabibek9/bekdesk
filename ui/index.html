@@ -10,10 +10,11 @@
   <aside class="nav">
     <div class="brand"><span class="logo"></span>bekdesk</div>
     <span class="nav-ind" id="nav-ind"></span>
-    <button data-view="devices" class="on">Nearby Devices</button>
-    <button data-view="workspace">Manage Screens</button>
-    <button data-view="activity">Connections</button>
-    <button data-view="settings">Settings</button>
+    <button data-view="devices" class="on"><svg class="ni" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Nearby Devices</button>
+    <button data-view="workspace"><svg class="ni" viewBox="0 0 24 24"><rect x="2.5" y="5" width="11" height="8" rx="1.5"/><rect x="15.5" y="7" width="6" height="9" rx="1.2"/><path d="M6 17h4M8 13v4"/></svg>Manage Screens</button>
+    <button data-view="activity"><svg class="ni" viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg>Connections</button>
+    <button data-view="settings"><svg class="ni" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>Settings</button>
+    <div class="nav-art" aria-hidden="true"></div>
     <div class="me" id="me"></div>
     <div class="ver" id="ver"></div>
     <button class="link quit" id="quit" title="Stop sharing and close bekdesk">Quit bekdesk</button>
@@ -23,18 +24,19 @@
     <section id="devices" class="view on">
       <header class="split"><div><h1>Nearby Devices</h1><p class="sub">Computers with bekdesk open on the same Wi-Fi appear here. Pick what each one should do.</p></div><button class="btn" id="scan">Scan</button></header>
       <div class="card addr">
+        <div class="ico wifi"><svg viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.3" r="1" fill="currentColor"/></svg></div>
         <div class="addr-me">
           <div class="small">Your address</div>
           <div class="addr-ip" id="addr-ip">…</div>
           <div class="small" id="addr-id"></div>
         </div>
         <div class="addr-act"><button class="btn" id="copy-addr">Copy address</button></div>
-        <img class="addr-art" src="art/dhaka-boy.webp" alt="" width="361" height="380" />
-        <details class="addr-connect"><summary>Can't see a computer?</summary>
+        <details class="addr-connect" open><summary>Can't see a computer?</summary>
           <form id="connect-form" autocomplete="off">
             <div class="small">Type the address shown on it (under "Your address").</div>
             <div class="pinrow"><input id="connect-host" placeholder="e.g. 192.168.1.23" spellcheck="false" /><button class="btn primary" id="connect-btn" type="submit">Connect</button></div>
           </form>
+          <img class="addr-art" src="art/dhaka-boy.webp" alt="" width="361" height="380" />
         </details>
       </div>
       <div id="components" class="components hidden"><span></span><div class="bar"><i></i></div></div>
@@ -58,24 +60,33 @@
 
     <section id="activity" class="view">
       <header><h1>Connections</h1><p class="sub">What's connected right now, and files being sent.</p></header>
+      <div class="band" aria-hidden="true"></div>
       <h2>Active now</h2><div id="sessions" class="list"></div>
       <h2>Transfers</h2><div id="transfers" class="list"></div>
       <h2>Troubleshooting</h2>
-      <div class="card small">Something not working? Press <button class="link" id="diag">Copy diagnostics</button> and paste it when you ask for help, or <button class="link" data-open="logs">open the log folder</button>.
-        <details class="more"><summary>Show the log</summary><pre id="log" class="log"></pre></details></div>
+      <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0 5 5L13 18a2.1 2.1 0 0 1-3-3l6.5-6.5zM6 6l3 3M4 8l4-4"/></svg></div>
+        <div class="sbody small"><h3>Something not working?</h3>Press <button class="link" id="diag">Copy diagnostics</button> and paste it when you ask for help, or <button class="link" data-open="logs">open the log folder</button>.
+        <details class="more"><summary>Show the log</summary><pre id="log" class="log"></pre></details></div></div>
     </section>
 
     <section id="settings" class="view">
-      <header><h1>Settings</h1></header>
-      <div class="card form">
-        <label>Device name <input id="name" maxlength="60" /></label>
-        <label class="row"><input type="checkbox" id="autostart" /> Start bekdesk when I sign in</label>
-        <div class="row"><button class="link" data-open="inbox">Open received files</button></div>
+      <header><h1>Settings</h1><p class="sub">Make bekdesk work the way you do.</p></header>
+      <div class="card scard setdev"><div class="stile"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+        <div class="sbody form"><h3>Device</h3>
+          <label>Device name <input id="name" maxlength="60" /></label>
+          <label class="row"><input type="checkbox" id="autostart" /> Start bekdesk when I sign in</label>
+          <div class="row"><button class="link" data-open="inbox">Open received files</button></div>
+        </div>
       </div>
-      <h2>Devices</h2><div id="trusted" class="list"></div>
-      <h2>Blocked devices</h2><div id="blocked" class="list"></div>
-      <h2>About</h2>
-      <div class="card small">bekdesk 0.1.21 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.<div id="links" class="links"></div></div>
+      <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></svg></div>
+        <div class="sbody"><h3>Your devices</h3><div id="trusted" class="list"></div></div>
+      </div>
+      <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></div>
+        <div class="sbody"><h3>Blocked devices</h3><div id="blocked" class="list"></div></div>
+      </div>
+      <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></div>
+        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.21 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
+      </div>
     </section>
   </main>
 

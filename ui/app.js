@@ -10,10 +10,10 @@ let shownReq = null;   // pair request id in the modal
 let dragging = null;
 
 const MODES = [
-  ["input", "Share Input", "This PC's keyboard & mouse"],
-  ["extend", "Extend", "Extra screen"],
-  ["mirror", "Duplicate", "Same screen"],
-  ["off", "Off", "Not connected"],
+  ["input", "Share Input", "This PC's keyboard & mouse", '<rect x="7" y="3" width="10" height="16" rx="5"/><path d="M12 3v5"/>'],
+  ["extend", "Extend", "Extra screen", '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'],
+  ["mirror", "Duplicate", "Same screen", '<rect x="3" y="7" width="13" height="10" rx="1.5"/><path d="M8 4h11.5A1.5 1.5 0 0 1 21 5.5V13"/>'],
+  ["off", "Off", "Not connected", '<circle cx="12" cy="12" r="8.5"/><path d="M8 12h8"/>'],
 ];
 const LABEL = { input: "Share Input", extend: "Extend", mirror: "Duplicate", off: "Off" };
 const ICON = {
@@ -195,7 +195,7 @@ function buildCard(e) {
   el.className = "dev rise";
   el.dataset.fp = e.key;
   el.innerHTML = `<div class="head"><div class="ico"></div><div class="t"><div class="n"></div><div class="s"></div></div><span class="pill"><i></i><b></b></span></div>
-    <div class="seg">${e.modes.map((m) => { const x = MODES.find((q) => q[0] === m); return `<button data-mode="${m}" data-fp="${esc(e.key)}"><b>${x[1]}</b><span>${x[2]}</span></button>`; }).join("")}</div>
+    <div class="seg">${e.modes.map((m) => { const x = MODES.find((q) => q[0] === m); return `<button data-mode="${m}" data-fp="${esc(e.key)}"><svg class="mi" viewBox="0 0 24 24">${x[3]}</svg><b>${x[1]}</b><span>${x[2]}</span></button>`; }).join("")}</div>
     <div class="note"></div><div class="extra"></div>${e.key.startsWith("pair:") ? "" : `<details class="logs"><summary>Details</summary><pre>Loading…</pre></details>`}`;
   return el;
 }
@@ -707,17 +707,23 @@ $("#diag").addEventListener("click", async () => {
 });
 
 // ---------- settings ----------
+const PERM = {
+  input: ["Control this computer", "Allow this device to control your keyboard and mouse."],
+  files: ["Send files here", "Allow this device to send files to this computer."],
+  clipboard: ["Clipboard", "Allow clipboard sync between devices."],
+  screen: ["Show its screen here", "Allow this device to share its screen or be an extra display."],
+};
 function renderSettings() {
   if (document.activeElement !== $("#name")) $("#name").value = S.me.name;
   const devs = S.devices.filter((d) => d.trusted || d.online);
-  setHTML($("#trusted"), devs.map((d) => `<div class="card" data-fp="${esc(d.fp)}"><div class="row2"><div class="ico sm">${iconFor(d.kind, d.os)}</div><div class="grow"><b>${esc(d.name)}</b> <span class="small">${esc(osName(d.os))} · ${d.online ? "online" : "offline"} · ${d.trusted ? "trusted" : d.once ? "allowed this session" : "not paired"}</span></div>
+  setHTML($("#trusted"), devs.map((d) => `<div class="srow" data-fp="${esc(d.fp)}"><div class="row2"><div class="ico sm dark">${iconFor(d.kind, d.os)}</div><div class="grow"><b>${esc(d.name)}</b><div class="small">${esc(osName(d.os))} · ${d.online ? "Online" : "Offline"} · ${d.trusted ? "Trusted" : d.once ? "Allowed this session" : "Not paired"}</div></div>
       ${d.trusted ? "" : d.online ? `<button class="btn primary" data-pair="${esc(d.fp)}">Ask to connect</button>` : ""}
       ${d.trusted ? `<button class="btn" data-forget="${esc(d.fp)}">Forget</button>` : ""}<button class="btn danger" data-block="${esc(d.fp)}">Block</button></div>
-    ${d.trusted ? `<details class="perm"><summary>Permissions</summary><div class="caps">${["input", "clipboard", "files", "screen"].map((k) => `<label><input type="checkbox" data-cap="${k}" ${d.caps[k] ? "checked" : ""}/> ${{ input: "Control this computer", clipboard: "Clipboard", files: "Send files here", screen: "Show its screen here" }[k]}</label>`).join("")}</div></details>` : ""}</div>`).join("")
+    ${d.trusted ? `<details class="perm" open><summary>Permissions</summary><div class="small">Choose what this device can do when it's connected to you.</div><div class="caps">${["input", "files", "clipboard", "screen"].map((k) => `<label><input type="checkbox" data-cap="${k}" ${d.caps[k] ? "checked" : ""}/><span><b>${PERM[k][0]}</b><small>${PERM[k][1]}</small></span></label>`).join("")}</div></details>` : ""}</div>`).join("")
     || `<div class="empty">No devices found yet. Open bekdesk on your other computer, on the same Wi-Fi.</div>`);
   setHTML($("#links"), Object.entries(LINKS).filter(([, u]) => u).map(([n, u]) => `<button class="btn" data-url="${esc(u)}">${esc(n)}</button>`).join(""));
   setHTML($("#blocked"), Object.entries(S.blocked).map(([fp, n]) => `<div class="card row2"><div class="grow"><b>${esc(n)}</b> <span class="small">${esc(fp.slice(0, 16))}…</span></div><button class="btn" data-unblock="${esc(fp)}">Unblock</button></div>`).join("")
-    || `<div class="empty">Nothing blocked.</div>`);
+    || `<div class="small">Nothing blocked.</div>`);
 }
 $("#name").addEventListener("change", (e) => call("set_name", { name: e.target.value }));
 $("#autostart").addEventListener("change", (e) => call("autostart", { enable: e.target.checked }));
