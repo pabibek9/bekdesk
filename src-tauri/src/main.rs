@@ -158,6 +158,16 @@ fn set_stay_awake(app: Core, fp: String, on: bool) {
     app.save();
 }
 
+/// Settings: scrolling while another computer controls this one; used from the next Share Input session.
+#[tauri::command]
+fn set_scroll(app: Core, speed: f64, invert: bool) {
+    let mut cfg = app.cfg.lock().unwrap();
+    cfg.scroll_speed = speed.clamp(0.1, 10.0);
+    cfg.invert_scroll = invert;
+    drop(cfg);
+    app.save();
+}
+
 #[tauri::command]
 async fn rescan(app: Core<'_>) -> Result<(), String> {
     modes::rescan(app.inner()).await;
@@ -595,6 +605,19 @@ fn main() {
                     let _ = flash_numbers(&handle);
                 }
             });
+            let (handle, c) = (app.handle().clone(), core.clone());
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    c.asked.notified().await;
+                    let h = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        show(&h);
+                        if let Some(w) = h.get_webview_window("main") {
+                            let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
+                        }
+                    });
+                }
+            });
             // Monitors change at runtime (plug/unplug, the virtual monitor); keep the list live.
             let (handle, c) = (app.handle().clone(), core.clone());
             tauri::async_runtime::spawn(async move {
@@ -645,7 +668,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_scroll, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

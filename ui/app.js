@@ -159,12 +159,15 @@ function entities() {
   }
   const paired = ts.devices || [];
   if (t === "off" && !paired.length) return out;
-  const dn = paired.map((d) => d.name).filter(Boolean).join(", ") || "Tablet or phone";
+  // Several paired devices share one stream: name the one showing now, list each on its own row.
+  const now = ts.streaming ? paired.find((d) => d.name === ts.name) : null;
+  const dn = now?.name || (paired.length === 1 ? paired[0].name : "") || "your tablet or phone";
   const mode = busy.tablet || t;
   let pill = ["ready", "Off"], extra = "";
   // Moonlight on Android streams 720p unless told otherwise, and only the device can change that.
   const sharp = `<div class="hint">For a sharp picture: in the app on the tablet open <b>Settings</b>, set <b>Video resolution</b> to <b>Native</b>${t === "extend" ? ` (${esc(S.tablet_res)})` : ""} move <b>Video bitrate</b> to about 40 Mbps, and set <b>Frame rate</b> to 90 on a 120 Hz screen (60 on a 60 Hz one).</div>`;
-  const list = paired.map((d) => `<div class="mlrow"><span class="gi">${ICON.tablet}</span><b>${esc(d.name || "Unnamed device")}</b><button class="link" data-act="forget" data-uuid="${esc(d.uuid)}">Remove</button></div>`).join("");
+  const list = paired.map((d) => `<div class="mlrow"><span class="gi">${ICON.tablet}</span><b>${esc(d.name || "Unnamed device")}</b>${d === now ? `<span class="chip live">Showing now</span>` : `<span class="chip off">Not showing</span>`}<button class="link" data-act="forget" data-uuid="${esc(d.uuid)}">Remove</button></div>`).join("");
+  const devRows = paired.length > 1 ? `<div class="mlist">${list}</div><div class="hint">One device shows this PC's screen at a time.</div>` : "";
   const more = (items) => `<details class="more"><summary>More</summary>${items.join("")}</details>`;
   const fix401 = paired.length ? `<div class="hint">The tablet says <b>not authorized (401)</b>? On the tablet long-press <b>${esc(host)}</b> → <b>Delete PC</b>, then tap it again and pair with the PIN.</div>` : "";
   if (t !== "off") {
@@ -175,16 +178,17 @@ function entities() {
       : paired.length ? `<div class="hint">On ${esc(dn)}, open Moonlight, tap <b>${esc(host)}</b>, then <b>Desktop</b>.</div>`
       : `<div class="hint">On the tablet or phone, open Moonlight and tap <b>${esc(host)}</b>. It asks for a PIN here.</div>`;
     if (S.tablet_note && !busy.tablet) extra += `<div class="acts1">${reconnectBtn("tablet").replace('class="btn"', 'class="btn primary"')}</div>`;
+    extra = devRows + extra;
     extra += more([
-      list, sharp, fix401,
+      paired.length > 1 ? "" : list, sharp, fix401,
       t === "extend" ? speedSlider("tablet", dn) : "", soundToggle("tablet", dn),
       t === "extend" ? `<label class="resrow">Screen size <input id="tab-res" value="${esc(S.tablet_res)}" size="10" /></label>` : "",
       !busy.tablet && !S.tablet_note ? `<div class="acts1">${reconnectBtn("tablet")}</div>` : "",
     ]);
   } else {
-    extra = `<div class="hint">Choose Extend or Duplicate, then open Moonlight on it.</div>` + more([list, fix401]);
+    extra = devRows + `<div class="hint">Choose Extend or Duplicate, then open Moonlight on it.</div>` + more([paired.length > 1 ? "" : list, fix401]);
   }
-  out.push({ key: "tablet", kind: "tablet", online: true, name: dn, os: "tablet", sub: t === "off" ? "Tablet or phone" : t === "extend" ? "Extra screen for this PC" : "Same screen as this PC", pill, mode,
+  out.push({ key: "tablet", kind: "tablet", online: true, name: paired.length > 1 ? "Tablets and phones" : dn, os: "tablet", sub: paired.length > 1 ? `${paired.length} paired` + (t === "off" ? "" : t === "extend" ? " · extra screen for this PC" : " · same screen as this PC") : t === "off" ? "Tablet or phone" : t === "extend" ? "Extra screen for this PC" : "Same screen as this PC", pill, mode,
     modes: winHost ? ["extend", "mirror", "off"] : ["mirror", "off"], disabled: !!busy.tablet, extendOk: winHost, note: S.tablet_note, extra });
   return out;
 }
@@ -488,6 +492,7 @@ function frameHTML(it) {
 }
 
 const groups = new Map();
+let wsView = null;
 function renderWorkspace() {
   if (dragging) return;
   const c = $("#canvas");
@@ -495,14 +500,19 @@ function renderWorkspace() {
   if (!W) return;
   const items = wsItems();
   const me = items[0];
-  const cx = me.p.x + me.b.w / 2, cy = me.p.y + me.b.h / 2;
+  let cx = me.p.x + me.b.w / 2, cy = me.p.y + me.b.h / 2;
   // Fit everything while keeping this PC centred; leave room for stands and labels.
   let ex = me.b.w / 2, ey = me.b.h / 2;
   for (const it of items) {
     ex = Math.max(ex, Math.abs(it.p.x - cx), Math.abs(it.p.x + it.b.w - cx));
     ey = Math.max(ey, Math.abs(it.p.y - cy), Math.abs(it.p.y + it.b.h - cy));
   }
-  const scale = Math.min(1.1, (W / 2 - 40) / ex, (H / 2 - 70) / ey);
+  // Keep the view still while arranging, so dropping one device never shrinks or shifts the others;
+  // refit only when the canvas size or the set of devices changes, or something would fall off the edge.
+  const fit = Math.min(1.1, (W / 2 - 40) / ex, (H / 2 - 70) / ey), keys = items.map((i) => i.key).join();
+  if (!wsView || wsView.W !== W || wsView.H !== H || wsView.keys !== keys || wsView.scale > fit * 1.02) wsView = { W, H, keys, scale: fit, cx, cy };
+  const { scale } = wsView;
+  ({ cx, cy } = wsView);
   Object.assign(c.dataset, { scale, cx, cy });
   const keep = new Set();
   for (const it of items) {
@@ -622,6 +632,12 @@ $("#canvas").addEventListener("pointermove", (e) => {
   dragging.g.style.left = dragging.l + e.clientX - dragging.sx + "px";
   dragging.g.style.top = dragging.t + e.clientY - dragging.sy + "px";
 });
+/** v moved to the nearest of `edges` if that is within `near`, else v unchanged. */
+function snapTo(v, edges, near) {
+  const e = edges.reduce((b, c) => (Math.abs(c - v) < Math.abs(b - v) ? c : b), Infinity);
+  return Math.abs(e - v) <= near ? e : v;
+}
+console.assert(snapTo(100, [105, 300], 8) === 105 && snapTo(100, [120], 8) === 100 && snapTo(5, [], 8) === 5, "snapTo");
 async function endMonitorDrag({ mon, g, moved }) {
   dragging = null;
   mon.classList.remove("dragging");
@@ -630,7 +646,7 @@ async function endMonitorDrag({ mon, g, moved }) {
   let l = mon.offsetLeft, t = mon.offsetTop, best = null;
   for (const o of g.querySelectorAll(".screen")) {
     if (o === mon) continue;
-    const top = Math.abs(t - o.offsetTop) < 20 ? o.offsetTop : t, left = Math.abs(l - o.offsetLeft) < 20 ? o.offsetLeft : l;
+    const top = Math.abs(t - o.offsetTop) < 5 ? o.offsetTop : t, left = Math.abs(l - o.offsetLeft) < 5 ? o.offsetLeft : l;
     for (const [x, y] of [[o.offsetLeft + o.offsetWidth, top], [o.offsetLeft - mon.offsetWidth, top], [left, o.offsetTop + o.offsetHeight], [left, o.offsetTop - mon.offsetHeight]]) {
       const d = Math.hypot(x - l, y - t);
       if (!best || d < best.d) best = { x, y, d };
@@ -644,8 +660,8 @@ async function endMonitorDrag({ mon, g, moved }) {
   const snap = (v, size, edges) => edges.flatMap((e) => [e, e - size]).reduce((b, c) => (Math.abs(c - v) < Math.abs(b - v) ? c : b), Infinity);
   const others = [...g.querySelectorAll(".screen")].filter((o) => o !== mon).map((o) => o.dataset);
   const sx = snap(nx, w, others.flatMap((o) => [+o.x, +o.x + +o.w])), sy = snap(ny, h, others.flatMap((o) => [+o.y, +o.y + +o.h]));
-  if (Math.abs(sx - nx) < 40) nx = sx;
-  if (Math.abs(sy - ny) < 40) ny = sy;
+  if (Math.abs(sx - nx) < 12) nx = sx;
+  if (Math.abs(sy - ny) < 12) ny = sy;
   try {
     await call("move_display", { x: +mon.dataset.x, y: +mon.dataset.y, nx, ny });
   } catch (_) {}
@@ -660,17 +676,10 @@ async function endDrag() {
   if (!moved) { dragging = null; return; }
   const c = $("#canvas"), scale = +c.dataset.scale, cx = +c.dataset.cx, cy = +c.dataset.cy, W = c.clientWidth, H = c.clientHeight;
   let gl = parseFloat(g.style.left), gt = parseFloat(g.style.top);
-  // Snap flush to the nearest edge of another device, aligning tops/lefts when close.
-  let best = null;
-  for (const o of groups.values()) {
-    if (o === g) continue;
-    const top = Math.abs(gt - o._t) < 30 ? o._t : gt, left = Math.abs(gl - o._l) < 30 ? o._l : gl;
-    for (const [x, y] of [[o._l + o._w, top], [o._l - g._w, top], [left, o._t + o._ht], [left, o._t - g._ht]]) {
-      const dist = Math.hypot(x - gl, y - gt);
-      if (!best || dist < best.dist) best = { x, y, dist };
-    }
-  }
-  if (best && best.dist < 40) { gl = best.x; gt = best.y; }
+  // The device stays where it was dropped; each axis only clicks onto a neighbour's edge when already within a few pixels.
+  const others = [...groups.values()].filter((o) => o !== g);
+  gl = snapTo(gl, others.flatMap((o) => [o._l + o._w, o._l - g._w, o._l, o._l + o._w - g._w]), 8);
+  gt = snapTo(gt, others.flatMap((o) => [o._t, o._t + o._ht - g._ht, o._t + o._ht, o._t - g._ht]), 8);
   // Everything else keeps its current spot; only the dragged device moves.
   const layout = {};
   for (const it of wsItems()) layout[it.key] = { x: Math.round(it.p.x), y: Math.round(it.p.y) };
@@ -715,6 +724,10 @@ const PERM = {
 };
 function renderSettings() {
   if (document.activeElement !== $("#name")) $("#name").value = S.me.name;
+  const sc = S.scroll || { speed: 1, invert: false };
+  if (document.activeElement !== $("#scroll-speed")) $("#scroll-speed").value = sc.speed;
+  $("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×";
+  $("#scroll-invert").checked = sc.invert;
   const devs = S.devices.filter((d) => d.trusted || d.online);
   setHTML($("#trusted"), devs.map((d) => `<div class="srow" data-fp="${esc(d.fp)}"><div class="row2"><div class="ico sm dark">${iconFor(d.kind, d.os)}</div><div class="grow"><b>${esc(d.name)}</b><div class="small">${esc(osName(d.os))} · ${d.online ? "Online" : "Offline"} · ${d.trusted ? "Trusted" : d.once ? "Allowed this session" : "Not paired"}</div></div>
       ${d.trusted ? "" : d.online ? `<button class="btn primary" data-pair="${esc(d.fp)}">Ask to connect</button>` : ""}
@@ -726,6 +739,62 @@ function renderSettings() {
     || `<div class="small">Nothing blocked.</div>`);
 }
 $("#name").addEventListener("change", (e) => call("set_name", { name: e.target.value }));
+// ---------- first run ----------
+// Shown once for this version: what each system asks for, before the first connection needs it.
+const WELCOME = "welcome-0.1.22";
+const STEPS = {
+  windows: ["When Windows asks about the firewall, allow bekdesk on <b>Private networks</b>.", "Keep bekdesk open (it can sit in the tray) on every computer you want to use."],
+  linux: ["Open the firewall once: <code>sudo firewall-cmd --permanent --add-port=47290/tcp --add-service=mdns && sudo firewall-cmd --reload</code>", "When another computer first takes control, your desktop asks to <b>allow remote control</b>. Choose <b>Allow</b> and tick <b>Remember</b> if offered."],
+  macos: ["When asked, allow bekdesk in <b>System Settings → Privacy & Security → Accessibility</b> (to share the keyboard and mouse) and <b>Screen Recording</b> (to show screens)."],
+};
+function showWelcome() {
+  let seen = true;
+  try { seen = !!localStorage.getItem(WELCOME); } catch (_) {}
+  if (seen || !S) return false;
+  $("#wl-name").value = S.me.name;
+  setHTML($("#wl-steps"), (STEPS[S.me.os] || []).map((t) => `<li>${t}</li>`).join(""));
+  $("#welcome").classList.remove("hidden");
+  return true;
+}
+$("#wl-go").addEventListener("click", async () => {
+  const name = $("#wl-name").value.trim();
+  if (name && name !== S.me.name) await call("set_name", { name });
+  await call("autostart", { enable: $("#wl-auto").checked });
+  try { localStorage.setItem(WELCOME, "1"); } catch (_) {}
+  $("#welcome").classList.add("hidden");
+  refresh();
+});
+
+// While parts are downloading nothing works yet, so the window waits behind a friendly screen.
+const WAIT_MSGS = ["Be patient, something good is downloading…", "Fetching the keyboard-and-mouse helper…", "Packing the screen-sharing parts…", "Almost there. Time for a cup of chiya?", "Setting up so your first connection is instant."];
+let grSkip = false, grTick = 0;
+function renderGetReady() {
+  const comp = S.components || "", busy = !!comp && !grSkip && $("#welcome").classList.contains("hidden");
+  $("#getready").classList.toggle("hidden", !busy);
+  if (!busy) return;
+  const failed = comp.includes("Couldn't");
+  const pct = /(\d+)%/.exec(comp);
+  $("#getready .bar i").style.width = (pct ? pct[1] : 6) + "%";
+  $("#getready .gr-detail").textContent = comp;
+  $("#gr-skip").classList.toggle("hidden", !failed);
+  $("#getready .gr-msg").textContent = failed ? "No internet? bekdesk keeps trying every minute." : WAIT_MSGS[Math.floor(grTick++ / 4) % WAIT_MSGS.length];
+}
+$("#gr-skip").addEventListener("click", () => { grSkip = true; renderGetReady(); });
+
+// Appearance: the sidebar button flips light/dark; Settings also offers "Auto" (follow the system).
+function renderTheme() {
+  const p = window.themePref?.() || "auto";
+  document.querySelectorAll("#theme-seg [data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === p));
+  $("#theme-btn span").textContent = document.documentElement.classList.contains("dark") ? "Light mode" : "Dark mode";
+}
+$("#theme-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme]"); if (b) { setTheme(b.dataset.theme); renderTheme(); } });
+$("#theme-btn").addEventListener("click", () => { setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"); renderTheme(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderTheme);
+renderTheme();
+const saveScroll = () => call("set_scroll", { speed: +$("#scroll-speed").value, invert: $("#scroll-invert").checked }).then(refresh);
+$("#scroll-speed").addEventListener("input", () => ($("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×"));
+$("#scroll-speed").addEventListener("change", saveScroll);
+$("#scroll-invert").addEventListener("change", saveScroll);
 $("#autostart").addEventListener("change", (e) => call("autostart", { enable: e.target.checked }));
 // Only links that are filled in are shown.
 const LINKS = { GitHub: "https://github.com/pabibek9/bekdesk", LinkedIn: "", Instagram: "", "Join the developer team": "" };
@@ -821,7 +890,10 @@ function render() {
   if (v === "activity") renderActivity();
   if (v === "settings") renderSettings();
   renderModal();
+  if (!welcomed) welcomed = true, showWelcome();
+  renderGetReady();
 }
+let welcomed = false;
 async function refresh() {
   try { S = await invoke("snapshot"); render(); } catch (e) { console.error(e); }
 }

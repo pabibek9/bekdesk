@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>bekdesk</title>
   <link rel="stylesheet" href="app.css" />
+  <script src="theme.js"></script>
 </head>
 <body>
   <aside class="nav">
@@ -17,6 +18,7 @@
     <div class="nav-art" aria-hidden="true"></div>
     <div class="me" id="me"></div>
     <div class="ver" id="ver"></div>
+    <button class="link theme-btn" id="theme-btn" title="Switch between light and dark"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span></span></button>
     <button class="link quit" id="quit" title="Stop sharing and close bekdesk">Quit bekdesk</button>
   </aside>
 
@@ -62,7 +64,7 @@
 
     <section id="activity" class="view">
       <header><h1>Connections</h1><p class="sub">What's connected right now, and files being sent.</p></header>
-      <div class="band" aria-hidden="true"></div>
+      <div class="band" aria-hidden="true"><div class="cute band-cute">Easy connection,<br />easy life</div></div>
       <h2>Active now</h2><div id="sessions" class="list"></div>
       <h2>Transfers</h2><div id="transfers" class="list"></div>
       <h2>Troubleshooting</h2>
@@ -77,6 +79,10 @@
         <div class="sbody form"><h3>Device</h3>
           <label>Device name <input id="name" maxlength="60" /></label>
           <label class="row"><input type="checkbox" id="autostart" /> Start bekdesk when I sign in</label>
+          <div class="spd">Scroll speed when another computer controls this one <input type="range" id="scroll-speed" min="0.25" max="3" step="0.25" /> <b id="scroll-val"></b></div>
+          <label class="row"><input type="checkbox" id="scroll-invert" /> Reverse scroll direction</label>
+          <div class="small">Two-finger scrolling is passed on; pinch and swipe gestures stay on the computer you're touching.</div>
+          <div class="row seg3" id="theme-seg" role="radiogroup" aria-label="Appearance">Appearance <button class="btn sm" data-theme="auto">Auto</button><button class="btn sm" data-theme="light">Light</button><button class="btn sm" data-theme="dark">Dark</button></div>
           <div class="row"><button class="link" data-open="inbox">Open received files</button></div>
         </div>
       </div>
@@ -87,11 +93,32 @@
         <div class="sbody"><h3>Blocked devices</h3><div id="blocked" class="list"></div></div>
       </div>
       <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></div>
-        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.21 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
+        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.22 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
       </div>
     </section>
   </main>
 
+  <div id="welcome" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="wl-title">
+    <div class="ov-card">
+      <img class="ov-boy" src="art/dhaka-boy.webp" alt="" width="361" height="380" />
+      <h2 id="wl-title">Welcome to bekdesk</h2>
+      <p class="small">A few things once, so everything after just works.</p>
+      <label class="wl-row">Name of this computer <input id="wl-name" maxlength="60" /></label>
+      <label class="wl-row row"><input type="checkbox" id="wl-auto" checked /> Start bekdesk when I sign in, so other computers can reach this one</label>
+      <ol class="wl-steps" id="wl-steps"></ol>
+      <button class="btn primary" id="wl-go">Get started</button>
+    </div>
+  </div>
+  <div id="getready" class="overlay hidden" role="alertdialog" aria-labelledby="gr-title">
+    <div class="ov-card">
+      <img class="ov-boy bob" src="art/dhaka-boy.webp" alt="" width="361" height="380" />
+      <h2 id="gr-title">Getting bekdesk ready</h2>
+      <p class="gr-msg cute"></p>
+      <div class="bar"><i></i></div>
+      <div class="small gr-detail"></div>
+      <button class="link hidden" id="gr-skip">Use bekdesk anyway</button>
+    </div>
+  </div>
   <div id="modal" class="modal hidden"></div>
   <div id="toast" class="toast hidden"></div>
   <div id="ctx" class="ctx hidden" role="menu"></div>

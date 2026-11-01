@@ -1,3 +1,19 @@
+## bekdesk 0.1.22 — preview
+
+### Fixes
+- **The Allow prompt always appears:** when another computer asks to connect, bekdesk now opens its window (even from the tray) and flashes it, instead of the request silently timing out. If a computer had forgotten the other one (reinstalled, or Forget pressed), it asks again instead of showing an error.
+- **Manage Screens stays where you put it:** a device lands exactly where you drop it and only clicks onto an edge when it's already within a few pixels. The other devices no longer shift or shrink when you move one.
+- **Tablets and phones listed separately:** each paired device has its own row, marked "Showing now" or "Not showing".
+- **Scrolling:** Settings has a scroll speed and a reverse-direction option for when another computer controls this one. Two-finger scrolling is passed on; pinch and swipe gestures can't be (Deskflow doesn't support them).
+- **Extend:** when Windows rejects a size for the extra screen, bekdesk now uses the closest size the driver offers instead of failing with "-1". Picture problems on the receiving computer now say whether it's the firewall or the video decoder.
+- Starting a mode no longer waits for unrelated downloads.
+
+### New
+- **Welcome screen** on first start: name this computer, start at sign-in, and what Windows, Fedora or macOS will ask to allow.
+- **Getting ready screen** while parts download, with the Dhaka-topi boy and friendly messages; the app waits until it's ready.
+- **Light / Dark / Auto** in Settings, plus a quick switch at the bottom of the sidebar.
+- "Easy connection, easy life" on the Connections banner.
+
 ## bekdesk 0.1.21 — preview
 
 ### Changes

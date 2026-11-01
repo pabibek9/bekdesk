@@ -80,6 +80,9 @@ pub struct Config {
     pub hear: std::collections::HashSet<String>,
     /// Computers allowed to let this one lock and sleep while they control it (by default it stays awake).
     pub let_sleep: std::collections::HashSet<String>,
+    /// Scrolling while another computer controls this one: speed multiplier (0 = normal) and direction.
+    pub scroll_speed: f64,
+    pub invert_scroll: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -170,6 +173,8 @@ pub struct App {
     pub engine_lock: tokio::sync::Mutex<()>,
     /// Woken when a trusted peer asks this computer to flash its screen numbers.
     pub identify: tokio::sync::Notify,
+    /// Someone asked to connect: the UI opens the window so the Allow prompt is seen even from the tray.
+    pub asked: tokio::sync::Notify,
     /// Moonlight pairing requests waiting for a PIN, by pairing id, with when bekdesk first saw them.
     pub moonlight_pending: Mutex<HashMap<String, (Value, Instant)>>,
     pub tls: crate::net::Tls,
@@ -215,6 +220,7 @@ impl App {
             tablet_host: Default::default(),
             engine_lock: Default::default(),
             identify: Default::default(),
+            asked: Default::default(),
             moonlight_pending: Default::default(),
             tls,
             seq: AtomicU64::new(1),
@@ -449,6 +455,7 @@ impl App {
             "sound": cfg.sound,
             "hear": cfg.hear,
             "let_sleep": cfg.let_sleep,
+            "scroll": {"speed": if cfg.scroll_speed > 0.0 { cfg.scroll_speed } else { 1.0 }, "invert": cfg.invert_scroll},
             "hearing": crate::audio::status(),
             "pointer": cfg.pointer,
             "components": notes.get("components"),

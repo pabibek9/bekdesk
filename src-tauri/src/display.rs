@@ -373,8 +373,17 @@ mod win {
                 std::thread::sleep(std::time::Duration::from_millis(800));
                 r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
             }
+            if r != DISP_CHANGE_SUCCESSFUL && width > 0 {
+                // The driver only offers the sizes it knows; use its closest one rather than failing.
+                let near = modes(name).into_iter().filter(|m| (m.0, m.1) != (width, height)).min_by_key(|m| m.0.abs_diff(width) + m.1.abs_diff(height));
+                if let Some((mw, mh, _)) = near {
+                    dm.dmPelsWidth = mw;
+                    dm.dmPelsHeight = mh;
+                    r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+                }
+            }
             if r != DISP_CHANGE_SUCCESSFUL {
-                bail!("display mode {width}x{height} rejected ({r})");
+                bail!("Windows couldn't switch the extra screen on at {width}x{height} (error {r}). Press Reconnect; if it repeats, restart this PC once");
             }
             ChangeDisplaySettingsExW(std::ptr::null(), std::ptr::null(), std::ptr::null_mut(), 0, std::ptr::null());
         }

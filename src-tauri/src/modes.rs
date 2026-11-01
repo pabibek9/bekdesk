@@ -183,11 +183,15 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
             let local = TcpListener::bind(("127.0.0.1", 0)).await?;
             let lport = local.local_addr()?.port();
             let ini = app.dir.join("deskflow").join("client.ini");
+            let (speed, invert) = {
+                let c = app.cfg.lock().unwrap();
+                (if c.scroll_speed > 0.0 { c.scroll_speed.clamp(0.1, 10.0) } else { 1.0 }, c.invert_scroll)
+            };
             std::fs::create_dir_all(ini.parent().unwrap())?;
             std::fs::write(
                 &ini,
                 format!(
-                    "[core]\ncoreMode=1\ncomputerName={}\nport={lport}\npreventSleep=false\n\n[client]\nremoteHost=127.0.0.1\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
+                    "[core]\ncoreMode=1\ncomputerName={}\nport={lport}\npreventSleep=false\n\n[client]\nremoteHost=127.0.0.1\nyScrollScale={speed}\nxScrollScale={speed}\ninvertYScroll={invert}\ninvertXScroll={invert}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
                     App::screen_name(&app.id.fp)
                 ),
             )?;
@@ -378,7 +382,7 @@ fn server_config(app: &App) -> (String, String) {
             };
         }
     }
-    s += &format!("end\n\nsection: options\n\tclipboardSharing = false\n\tkeystroke(Control+Alt+Home) = switchToScreen({})\nend\n", App::screen_name(&app.id.fp));
+    s += &format!("end\n\nsection: options\n\twin32KeepForeground = true\n\tclipboardSharing = false\n\tkeystroke(Control+Alt+Home) = switchToScreen({})\nend\n", App::screen_name(&app.id.fp));
     (s, computers)
 }
 
@@ -1109,6 +1113,8 @@ pub fn diagnose(kind: (Mode, bool), log: &str, name: &str, waited: bool) -> Opti
         (Mode::Input, false) if after("failed to connect", "connected to server") => Some(format!("Couldn't reach {name}'s keyboard and mouse. Press Reconnect on {name}.")),
         (Mode::Mirror | Mode::Extend, true) if after("couldn't run [", "executing do cmd") || after("exited with code [", "executing do cmd") || low.contains("failed to launch") => Some(format!("The extra screen for {name} couldn't be switched on. Press Reconnect; if it happens again, use Copy diagnostics.")),
         (Mode::Mirror | Mode::Extend, true) if after("ssl verification error", "client connected") => Some(format!("{name} isn't paired with this computer's screen sharing any more (error 401). Press Reconnect; on a tablet, delete this PC in the app and pair again.")),
+        (Mode::Mirror | Mode::Extend, false) if low.contains("rtsp") && (low.contains("failed") || low.contains("-1")) => Some(format!("Couldn't open the picture from {name}. Check {name}'s firewall lets bekdesk in (on Windows allow it on private networks), then press Reconnect.")),
+        (Mode::Mirror | Mode::Extend, false) if low.contains("decoder") && (low.contains("fail") || low.contains("no ") || low.contains("unable")) => Some(format!("This computer couldn't decode the picture from {name}. Update its graphics drivers, then press Reconnect.")),
         (Mode::Mirror | Mode::Extend, false) if after("connection terminated", "starting stream") || low.contains("network connection isn't performing well") => Some(format!("The picture from {name} dropped, usually because of a weak Wi-Fi signal. Press Reconnect.")),
         _ => None,
     }
@@ -1322,6 +1328,8 @@ mod tests {
         assert!(d((Mode::Extend, true), "Executing Do Cmd: [x]\nError: [x] exited with code [1]", false).unwrap().contains("extra screen"));
         assert!(d((Mode::Extend, true), "Warning: SSL Verification error :: certificate", false).unwrap().contains("401"));
         assert!(d((Mode::Mirror, false), "Connection terminated: -1", false).unwrap().contains("Wi-Fi"));
+        assert!(d((Mode::Extend, false), "RTSP OPTIONS request failed: -1", false).unwrap().contains("firewall"));
+        assert!(d((Mode::Extend, false), "Unable to find working decoder", false).unwrap().contains("decode"));
         assert!(d((Mode::Mirror, true), "all fine", true).is_none());
     }
 

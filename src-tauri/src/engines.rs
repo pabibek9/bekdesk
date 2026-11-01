@@ -99,7 +99,8 @@ pub async fn ensure(app: &App, name: &str, note_key: &str) -> Result<PathBuf> {
         _ => format!("{name} is not available on {}", platform()),
     })?;
     let dir = dir_for(app, name, &p);
-    let _guard = app.engine_lock.lock().await;
+    // Only wait for other downloads when this part still needs one; installed parts start straight away.
+    let _guard = if dir.join(".ok").exists() { None } else { Some(app.engine_lock.lock().await) };
     if !dir.join(".ok").exists() {
         let r = install(app, name, &p, &dir, note_key).await;
         app.note(note_key, "");

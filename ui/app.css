@@ -4,10 +4,8 @@
   --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #0d0d0f; --panel: #17171a; --ink: #f2f2f4; --ink2: #a4a4ad; --ink3: #6b6b74;
+:root.dark { --bg: #0d0d0f; --panel: #17171a; --ink: #f2f2f4; --ink2: #a4a4ad; --ink3: #6b6b74;
     --line: #26262b; --hover: #1e1e22; --accent: #6b93ff; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3); color-scheme: dark; }
-}
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body { display: flex; background: var(--bg); color: var(--ink);
@@ -256,7 +254,7 @@ body { animation: appIn .55s var(--spring) both; }
 /* ---- Nepal look: soft blue-white surfaces, illustrations from Nepal's heritage ---- */
 :root { --bg: #f5f7fb; --line: #e3e8f1; --hover: #eef2f9; --accent: #1f5eff; --ink2: #5a6478; --ink3: #8d97a9;
   --shadow: 0 1px 2px rgba(20,40,90,.04), 0 6px 20px rgba(20,40,90,.06); }
-@media (prefers-color-scheme: dark) { :root { --bg: #0d0f14; --line: #262b36; --hover: #1b2030; --accent: #6b93ff; --ink2: #a4abbb; --ink3: #6b7385; } }
+:root.dark { --bg: #0d0f14; --line: #262b36; --hover: #1b2030; --accent: #6b93ff; --ink2: #a4abbb; --ink3: #6b7385; }
 .card, .dev, .components, .canvas { box-shadow: var(--shadow); border-radius: 16px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
@@ -318,7 +316,7 @@ body { animation: appIn .55s var(--spring) both; }
 .setdev > * { position: relative; z-index: 1; }
 @media (max-width: 680px) { .setdev::after { opacity: .35; } }
 /* dark mode: the same pictures, a little dimmer so they sit in the dark cards */
-@media (prefers-color-scheme: dark) { .nav-art, .addr-connect::before, .canvas::before, .band::before, .setdev::after { opacity: .8; filter: brightness(.8) saturate(.9); } }
+:root.dark .nav-art, :root.dark .addr-connect::before, :root.dark .canvas::before, :root.dark .band::before, :root.dark .setdev::after { opacity: .8; filter: brightness(.8) saturate(.9); }
 
 /* Settings: one card per section, an icon tile on the left */
 .scard { position: relative; display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; margin-bottom: 12px; }
@@ -336,7 +334,7 @@ body { animation: appIn .55s var(--spring) both; }
 .perm .caps small { display: block; font-size: 11.5px; color: var(--ink3); }
 .perm summary { font-weight: 600; color: var(--ink); }
 @media (max-width: 760px) { .perm .caps { grid-template-columns: 1fr; } }
-@media (prefers-color-scheme: dark) { .canvas::before { -webkit-mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); } }
+:root.dark .canvas::before { -webkit-mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); mask-image: linear-gradient(to bottom, #000 22%, transparent 58%); }
 
 /* handwritten captions beside the illustrations */
 .cute { font: 600 17px/1.25 "Segoe Print", "Bradley Hand", "Comic Neue", "Comic Sans MS", cursive; color: var(--accent); transform: rotate(-4deg); pointer-events: none; }
@@ -345,5 +343,38 @@ body { animation: appIn .55s var(--spring) both; }
 .ws-foot { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 6px; pointer-events: none; }
 .ws-foot img { height: 150px; width: auto; }
 .ws-foot .cute { color: #c0392b; margin-bottom: 30px; }
-@media (prefers-color-scheme: dark) { .ws-foot .cute { color: #f08a7e; } }
+:root.dark .ws-foot .cute { color: #f08a7e; }
 @media (max-width: 680px) { .ws-foot img { height: 110px; } }
+
+.mlist { margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 8px; }
+.mlist .mlrow .chip { margin-left: 4px; }
+
+/* appearance switch */
+.nav .theme-btn { position: relative; display: flex; align-items: center; gap: 7px; margin: 0 -12px; padding: 4px 14px 4px 58px; background: var(--panel); color: var(--ink3); font-size: 12px; border-radius: 0; }
+.nav .theme-btn:hover { color: var(--ink); }
+.theme-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.seg3 { gap: 6px; font-size: 12.5px; color: var(--ink2); }
+.seg3 .btn.sm { margin-top: 0; }
+.seg3 .btn.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+
+/* first-run welcome and the download wait screen */
+.overlay { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(6px); animation: fade .25s ease; }
+.ov-card { width: min(460px, 100%); max-height: 100%; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px 24px 24px; box-shadow: 0 24px 60px rgba(20,40,90,.18); text-align: center; animation: sheet .5s var(--spring) both; }
+.ov-card h2 { all: unset; display: block; font-size: 19px; font-weight: 650; margin: 6px 0 4px; color: var(--ink); }
+.ov-boy { height: 132px; width: auto; }
+.ov-boy.bob { animation: bob 2.6s ease-in-out infinite; transform-origin: 50% 90%; }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-5px) rotate(-2deg); } 55% { transform: translateY(0) rotate(1.5deg); } 70% { transform: translateY(-2px) rotate(0); } }
+.gr-msg { margin: 10px 0 12px; transform: none; min-height: 22px; animation: fade .4s ease; }
+.ov-card .bar { height: 6px; margin: 0 auto 8px; max-width: 320px; }
+.ov-card .bar i { background: var(--accent); transition: width .5s ease; }
+.gr-detail { min-height: 16px; }
+#gr-skip { margin-top: 10px; font-size: 12.5px; }
+.wl-row { display: flex; flex-direction: column; gap: 6px; text-align: left; font-size: 12.5px; color: var(--ink2); margin-top: 14px; }
+.wl-row.row { flex-direction: row; align-items: flex-start; gap: 8px; }
+.wl-row input[type=checkbox] { margin-top: 2px; }
+.wl-steps { text-align: left; margin: 14px 0 16px; padding-left: 20px; color: var(--ink2); font-size: 12.5px; line-height: 1.6; }
+.wl-steps:empty { display: none; }
+.wl-steps code { user-select: text; font-size: 11px; background: var(--hover); padding: 1px 5px; border-radius: 5px; word-break: break-all; }
+#wl-go { width: 100%; margin-top: 4px; padding: 10px; }
+.band-cute { position: absolute; left: 26px; top: 50%; translate: 0 -50%; z-index: 1; font-size: 19px; }
