@@ -75,12 +75,27 @@ const speedSlider = (key, name) => {
   return `<label class="spd">Mouse speed on ${esc(name)}<input type="range" min="0.5" max="3" step="0.25" value="${v}" data-speed="${esc(key)}" /><b>${v.toFixed(2).replace(/0$/, "")}×</b></label>`;
 };
 
-// Share Input: hear the controlled computer here (it goes quiet there). Only Linux can send its sound so far.
-const hearToggle = (d) => {
-  if (d.os !== "linux") return "";
-  const on = (S.hear || []).includes(d.fp), st = (S.hearing || {})[d.fp];
-  const note = on && st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? `Playing ${esc(d.name)}'s sound here.` : `No sound yet: ${esc(st)}`}</div>` : "";
-  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC (muted on ${esc(d.name)})</label>${note}`;
+// Share Input (either way): hear that computer here, and/or play this computer's sound there.
+// Ticking "play this PC's sound" on several computers plays it on all their speakers at once.
+const canSend = (os) => os === "linux" || os === "windows";
+const soundNote = (st, ok) => st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? ok : `No sound yet: ${esc(st)}`}</div>` : "";
+const hearToggle = (d, controlling) => {
+  if (!canSend(d.os)) return "";
+  const on = (S.hear || []).includes(d.fp), st = on && (S.hearing || {})["pull:" + d.fp];
+  const muted = controlling && d.os === "linux" ? ` (muted on ${esc(d.name)})` : "";
+  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC${muted}</label>${soundNote(st, `Playing ${esc(d.name)}'s sound here.`)}`;
+};
+// Microphone: the owner shares it first; then the other computer can use it as a microphone here.
+const micToggles = (d) => {
+  const share = (S.mic_share || []).includes(d.fp), use = (S.use_mic || []).includes(d.fp), st = use && (S.hearing || {})["mic:" + d.fp];
+  const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-mic-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's microphone</label>` : "";
+  const theirs = canSend(d.os) ? `<label class="snd"><input type="checkbox" data-mic-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s microphone here${S.me.os === "linux" ? ` (pick "bekdesk-microphone" in your app)` : S.me.os === "windows" ? ` (pick "CABLE Output" in your app)` : ""}</label>${soundNote(st, `${esc(d.name)}'s microphone is on here.`)}` : "";
+  return mine + theirs;
+};
+const pushToggle = (d) => {
+  if (!canSend(S.me.os)) return "";
+  const on = !!(S.sound || {})[d.fp], st = on && (S.hearing || {})["push:" + d.fp];
+  return `<label class="snd"><input type="checkbox" data-sound="${esc(d.fp)}" ${on ? "checked" : ""}/> Also play this PC's sound on ${esc(d.name)}'s speakers</label>${soundNote(st, `This PC's sound plays on ${esc(d.name)} too.`)}`;
 };
 // Being controlled: stay awake so the screen doesn't blank and lock while you work from the other keyboard.
 const awakeToggle = (d) => `<label class="snd"><input type="checkbox" data-awake="${esc(d.fp)}" ${(S.let_sleep || []).includes(d.fp) ? "" : "checked"}/> Keep this computer awake and unlocked while ${esc(d.name)} controls it</label>`;
@@ -107,7 +122,9 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const more = [
     mode === "extend" || mode === "input" ? speedSlider(d.fp, d.name) : "",
     mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "",
-    sharing ? hearToggle(d) : "",
+    sharing || controlled ? hearToggle(d, sharing) : "",
+    sharing || controlled ? pushToggle(d) : "",
+    sharing || controlled ? micToggles(d) : "",
     controlled ? awakeToggle(d) : "",
     mode !== "off" && !busy[d.fp] && !stuck ? `<div class="acts1">${reconnectBtn(d.fp)}</div>` : "",
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
@@ -359,11 +376,20 @@ $("#device-list").addEventListener("change", async (e) => {
     call("set_stay_awake", { fp, on });
     return;
   }
+  if (e.target.dataset.micShare || e.target.dataset.micUse) {
+    const share = !!e.target.dataset.micShare, fp = e.target.dataset.micShare || e.target.dataset.micUse, on = e.target.checked;
+    const k = share ? "mic_share" : "use_mic";
+    S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
+    call("set_mic", { fp, share, on });
+    return;
+  }
   if (e.target.dataset.sound) {
     const key = e.target.dataset.sound, on = e.target.checked;
     await call("set_sound", { key, on });
     S.sound = { ...(S.sound || {}), [key]: on };
-    reconnect(key); // the stream picks up the sound setting when it starts
+    // A screen stream picks up the sound setting when it starts; Share Input sound starts by itself.
+    const d = S.devices.find((x) => x.fp === key);
+    if (key === "tablet" || (d && d.session && d.session.mode !== "input")) reconnect(key);
     return;
   }
   if (e.target.id === "tab-res") call("set_tablet", { mode: S.tablet, res: e.target.value }).then(refresh);

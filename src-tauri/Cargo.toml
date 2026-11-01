@@ -1,6 +1,6 @@
 [package]
 name = "bekdesk"
-version = "0.1.23"
+version = "0.1.24"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Local-network multi-computer workspace: share input, extend and mirror displays"
@@ -35,6 +35,7 @@ clipboard-rs = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
+cpal = "0.15"
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

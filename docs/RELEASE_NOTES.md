@@ -1,3 +1,18 @@
+## bekdesk 0.1.24 — preview
+
+### Sound in every direction
+- Windows can now send its sound too (before, only Linux could).
+- On any computer connected with Share Input (either way), under **More**:
+  - **Play <name>'s sound on this PC**: hear that computer here. When you control a Linux computer, its own speakers go quiet.
+  - **Also play this PC's sound on <name>'s speakers**: tick it on several computers to play this PC's sound on all of them at once. They aren't perfectly in sync yet; expect a slight echo in the same room.
+- Fixed a crash when ticking a sound box (the setting ran where it couldn't start the sound).
+
+### Microphone sharing
+- The microphone's owner ticks **Let <name> use this PC's microphone**; then the other computer ticks **Use <name>'s microphone here**.
+- Fedora: pick **bekdesk-microphone** in your app (bekdesk creates it while it's in use).
+- Windows: install the free **VB-CABLE** (vb-audio.com/Cable) once, then pick **CABLE Output** as the microphone in your app.
+- Not yet from or to a Mac.
+
 ## bekdesk 0.1.23 — preview
 
 ### New: keyboard and mouse on the Windows lock screen

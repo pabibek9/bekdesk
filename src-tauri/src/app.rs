@@ -83,6 +83,9 @@ pub struct Config {
     /// Scrolling while another computer controls this one: speed multiplier (0 = normal) and direction.
     pub scroll_speed: f64,
     pub invert_scroll: bool,
+    /// Computers allowed to use this computer's microphone (the owner ticks it), and whose microphone is used here.
+    pub mic_share: std::collections::HashSet<String>,
+    pub use_mic: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -457,6 +460,8 @@ impl App {
             "let_sleep": cfg.let_sleep,
             "scroll": {"speed": if cfg.scroll_speed > 0.0 { cfg.scroll_speed } else { 1.0 }, "invert": cfg.invert_scroll},
             "hearing": crate::audio::status(),
+            "mic_share": cfg.mic_share,
+            "use_mic": cfg.use_mic,
             "pointer": cfg.pointer,
             "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),
