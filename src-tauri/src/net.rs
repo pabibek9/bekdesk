@@ -199,8 +199,14 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
                 Mode::Extend | Mode::Mirror => app.allowed(&fp, Cap::Screen),
                 Mode::Off => app.knows(&fp),
             };
+            // A trusts us but we forgot it (reinstalled, or pressed Forget): ask again instead of failing.
+            let ok = ok || (mode != Mode::Off && !app.knows(&fp) && {
+                let (name, os) = app.peer(&fp).map(|p| (p.name, p.os)).unwrap_or_else(|| (app.peer_name(&fp), String::new()));
+                pair_incoming(&app, &fp, &name, &os).await.ok && app.allowed(&fp, if mode == Mode::Input { Cap::Input } else { Cap::Screen })
+            });
             let r = if !ok {
-                Resp::err(format!("{} has not allowed this on {}", app.name(), app.name()))
+                let what = if mode == Mode::Input { "keyboard and mouse sharing" } else { "showing screens" };
+                Resp::err(format!("{} didn't allow {what} (check Settings → Permissions on {})", app.name(), app.name()))
             } else {
                 match crate::modes::start_target(&app, &fp, ip, mode, pin, port).await {
                     Ok(()) => Resp::ok(),
@@ -292,6 +298,7 @@ async fn pair_incoming(app: &Arc<App>, fp: &str, name: &str, os: &str) -> Resp {
         os: os.chars().take(16).collect(),
         code: app.code_with(fp),
     });
+    app.asked.notify_one();
     let d = timeout(Duration::from_secs(90), rx).await;
     app.requests.lock().unwrap().retain(|r| r.id != id);
     app.waiters.lock().unwrap().remove(&id);
