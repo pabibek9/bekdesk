@@ -1,3 +1,10 @@
+## bekdesk 0.1.25 — preview
+
+### Files
+- **Shared files** on Connections: everything other computers sent you, newest first, with picture previews. Open it, show it in its folder, or **Send on** to other computers.
+- **Right-click → Send with bekdesk:** on Windows under **Send to** ("Show more options" on Windows 11); on Fedora in GNOME Files under **Scripts**. Pick one or more computers and the files go to all of them.
+- "Open folder" buttons now work on Linux.
+
 ## bekdesk 0.1.24 — preview
 
 ### Sound in every direction

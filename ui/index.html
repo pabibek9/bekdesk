@@ -67,6 +67,8 @@
       <div class="band" aria-hidden="true"><div class="cute band-cute">Easy connection,<br />easy life</div></div>
       <h2>Active now</h2><div id="sessions" class="list"></div>
       <h2>Transfers</h2><div id="transfers" class="list"></div>
+      <h2>Shared files <button class="link" data-open="inbox">Open folder</button></h2>
+      <div id="gallery" class="gallery"></div>
       <h2>Troubleshooting</h2>
       <div class="card scard hidden" id="lock-card"><div class="stile"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/><path d="M12 14.5v2.5"/></svg></div>
         <div class="sbody"><h3>Lock screen and admin prompts</h3>
@@ -99,7 +101,7 @@
         <div class="sbody"><h3>Blocked devices</h3><div id="blocked" class="list"></div></div>
       </div>
       <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></div>
-        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.24 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
+        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.25 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
       </div>
     </section>
   </main>
@@ -126,6 +128,7 @@
       <button class="link hidden" id="gr-skip">Use bekdesk anyway</button>
     </div>
   </div>
+  <div id="sendto" class="modal hidden"></div>
   <div id="modal" class="modal hidden"></div>
   <div id="toast" class="toast hidden"></div>
   <div id="ctx" class="ctx hidden" role="menu"></div>

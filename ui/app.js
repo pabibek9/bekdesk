@@ -723,7 +723,60 @@ $("#canvas").addEventListener("pointercancel", endDrag);
 const fmtBytes = (n) => n > 1e9 ? (n / 1e9).toFixed(2) + " GB" : n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : n > 1e3 ? (n / 1e3).toFixed(0) + " KB" : n + " B";
 const fmtTime = (s) => s > 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m` : s > 60 ? `${Math.floor(s / 60)}m` : `${s}s`;
 
+// ---------- shared files ----------
+// Everything other computers sent here, newest first; open it, find it, or pass it on to another computer.
+let galleryAt = 0, galleryKey = "";
+async function renderGallery() {
+  const key = S.transfers.map((t) => t.id + t.state).join();
+  if (key === galleryKey && Date.now() - galleryAt < 15000) return;
+  galleryKey = key; galleryAt = Date.now();
+  let items = [];
+  try { items = await invoke("shared_files"); } catch (_) {}
+  const icon = `<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>`;
+  setHTML($("#gallery"), items.map((f, i) => `<div class="gitem" data-i="${i}">
+      <div class="gthumb">${f.thumb ? `<img src="${f.thumb}" alt="" loading="lazy" />` : icon}</div>
+      <div class="gname" title="${esc(f.name)}">${esc(f.name)}</div>
+      <div class="small">from ${esc(f.from)} · ${fmtBytes(f.size)}</div>
+      <div class="gacts"><button class="link" data-g="open">Open</button><button class="link" data-g="reveal">Show</button><button class="link" data-g="send">Send on</button></div>
+    </div>`).join("") || `<div class="empty">Files other computers send you show up here. They're saved in Downloads/bekdesk.</div>`);
+  $("#gallery")._items = items;
+}
+$("#gallery").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-g]"), it = e.target.closest(".gitem");
+  if (!b || !it) return;
+  const f = $("#gallery")._items[+it.dataset.i];
+  if (b.dataset.g === "send") return pickTargets([f.path]);
+  call("open_shared", { path: f.path, reveal: b.dataset.g === "reveal" });
+});
+
+// Choose which computers get these files (right-click → Send with bekdesk, or "Send on" above).
+function pickTargets(paths) {
+  const devs = S.devices.filter((d) => d.online && (d.trusted || d.once));
+  const m = $("#sendto");
+  const names = paths.map((p) => p.split(/[\\/]/).pop());
+  m.innerHTML = `<div class="dialog" role="dialog" aria-modal="true">
+    <h3>Send ${paths.length === 1 ? esc(names[0]) : `${paths.length} files`}</h3>
+    <div class="small">${devs.length ? "Pick the computers to send to." : "No paired computer is online right now. Open bekdesk on the other computer and try again."}</div>
+    <div class="pick">${devs.map((d) => `<label class="snd"><input type="checkbox" value="${esc(d.fp)}" checked /> ${esc(d.name)}</label>`).join("")}</div>
+    <div class="acts"><button class="btn primary" data-s="go" ${devs.length ? "" : "disabled"}>Send</button><button class="btn" data-s="cancel">Cancel</button></div></div>`;
+  m.classList.remove("hidden");
+  m.onclick = async (e) => {
+    const b = e.target.closest("[data-s]");
+    if (!b) return;
+    const fps = [...m.querySelectorAll("input:checked")].map((i) => i.value);
+    m.classList.add("hidden");
+    if (b.dataset.s !== "go") return;
+    for (const fp of fps) call("send_files", { fp, paths }).catch((err) => toast(`Couldn't send: ${err}`));
+    toast(`Sending to ${fps.length} computer${fps.length === 1 ? "" : "s"}…`);
+  };
+}
+async function checkPendingSend() {
+  try { const p = await invoke("take_pending_send"); if (p.length) pickTargets(p); } catch (_) {}
+}
+listen("send-pending", checkPendingSend);
+
 function renderActivity() {
+  renderGallery();
   const live = S.devices.filter((d) => d.session);
   const ts = S.tablet_state || {};
   const tab = S.tablet && S.tablet !== "off"
@@ -946,6 +999,7 @@ function render() {
   renderGetReady();
 }
 let welcomed = false;
+setTimeout(checkPendingSend, 1500); // started with right-click → Send with bekdesk
 async function refresh() {
   try { S = await invoke("snapshot"); render(); } catch (e) { console.error(e); }
 }
