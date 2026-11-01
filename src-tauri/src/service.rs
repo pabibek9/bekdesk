@@ -270,7 +270,7 @@ mod win {
             return None;
         }
         let mut dup: HANDLE = std::ptr::null_mut();
-        let ok = DuplicateTokenEx(tok, MAXIMUM_ALLOWED, std::ptr::null(), SecurityIdentification, TokenPrimary, &mut dup) != 0;
+        let ok = DuplicateTokenEx(tok, TOKEN_ALL_ACCESS, std::ptr::null(), SecurityIdentification, TokenPrimary, &mut dup) != 0;
         CloseHandle(tok);
         ok.then_some(dup)
     }
