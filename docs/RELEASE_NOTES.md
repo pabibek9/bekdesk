@@ -3,7 +3,7 @@
 ### New: keyboard and mouse on the Windows lock screen
 - **Settings → Lock screen and admin prompts → Turn on** (or the box on the welcome screen). Windows asks for admin permission once. It also sets up the extra-screen driver in the same step, so neither prompt surprises you later.
 - While another computer controls this PC, its keyboard and mouse then also work on the lock screen (type your password from the other computer) and on Windows admin (UAC) prompts.
-- How it works: a small "bekdesk lock screen helper" service runs Deskflow's client with system rights, only while Share Input is on. It lives in `C:\ProgramDataekdesk`, which only administrators can change, and only reads settings from a folder only you can write to. It uses Deskflow 1.27, which includes the fix for the earlier Deskflow service security issue (CVE-2026-41477).
+- How it works: a small "bekdesk lock screen helper" service runs Deskflow's client with system rights, only while Share Input is on. It lives in `C:\ProgramData\bekdesk`, which only administrators can change, and only reads settings from a folder only you can write to. It uses Deskflow 1.27, which includes the fix for the earlier Deskflow service security issue (CVE-2026-41477).
 - Before uninstalling bekdesk, turn this off in Settings, so the helper is removed too.
 - Not possible on Fedora: GNOME doesn't let any app control its login screen.
 
