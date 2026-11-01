@@ -182,7 +182,9 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
             let exe = ensure(app, "deskflow", fp).await?;
             let local = TcpListener::bind(("127.0.0.1", 0)).await?;
             let lport = local.local_addr()?.port();
-            let ini = app.dir.join("deskflow").join("client.ini");
+            // With the Windows lock screen helper set up, it runs the client with system rights from its own folder.
+            let helper = cfg!(windows) && crate::service::installed();
+            let ini = if helper { crate::service::client_ini() } else { app.dir.join("deskflow").join("client.ini") };
             let (speed, invert) = {
                 let c = app.cfg.lock().unwrap();
                 (if c.scroll_speed > 0.0 { c.scroll_speed.clamp(0.1, 10.0) } else { 1.0 }, c.invert_scroll)
@@ -195,11 +197,21 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     App::screen_name(&app.id.fp)
                 ),
             )?;
-            let args = vec!["client".to_string(), "--new-instance".into(), "-s".into(), fwd(&ini)];
-            let child = spawn(app, &exe, &args, "deskflow-client.log")?;
             let mut s = session(Mode::Input, false, ip, &format!("Controlled by {}", app.peer_name(fp)));
-            s.procs.push(child);
-            s.respawn = Some((exe, args, "deskflow-client.log".into()));
+            if helper {
+                // The helper runs the client while this file stays fresh, and stops it soon after the session ends.
+                s.tasks.push(tokio::spawn(async {
+                    loop {
+                        crate::service::touch();
+                        tokio::time::sleep(Duration::from_secs(4)).await;
+                    }
+                }));
+            } else {
+                let args = vec!["client".to_string(), "--new-instance".into(), "-s".into(), fwd(&ini)];
+                let child = spawn(app, &exe, &args, "deskflow-client.log")?;
+                s.procs.push(child);
+                s.respawn = Some((exe, args, "deskflow-client.log".into()));
+            }
             let (app2, fp2) = (app.clone(), fp.to_string());
             s.tasks.push(tokio::spawn(async move {
                 while let Ok((mut tcp, _)) = local.accept().await {
@@ -1070,6 +1082,7 @@ fn connection_logs(app: &App, key: &str) -> Vec<PathBuf> {
     }
     match app.sessions.lock().unwrap().get(key).map(|s| (s.mode, s.origin)) {
         Some((Mode::Input, true)) => vec![logs.join("deskflow-server.log")],
+        Some((Mode::Input, false)) if crate::service::client_ini().exists() => vec![crate::service::run_dir().join("deskflow-client.log")],
         Some((Mode::Input, false)) => vec![logs.join("deskflow-client.log")],
         Some((_, true)) => vec![sunshine(key)],
         Some((_, false)) => vec![logs.join("moonlight-pair.log"), logs.join("moonlight-stream.log")],

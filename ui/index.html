@@ -68,6 +68,12 @@
       <h2>Active now</h2><div id="sessions" class="list"></div>
       <h2>Transfers</h2><div id="transfers" class="list"></div>
       <h2>Troubleshooting</h2>
+      <div class="card scard hidden" id="lock-card"><div class="stile"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/><path d="M12 14.5v2.5"/></svg></div>
+        <div class="sbody"><h3>Lock screen and admin prompts</h3>
+          <div class="small" id="lock-text"></div>
+          <div class="acts1"><button class="btn primary" id="lock-btn"></button></div>
+        </div>
+      </div>
       <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><path d="M14.5 6.5a4 4 0 0 0 5 5L13 18a2.1 2.1 0 0 1-3-3l6.5-6.5zM6 6l3 3M4 8l4-4"/></svg></div>
         <div class="sbody small"><h3>Something not working?</h3>Press <button class="link" id="diag">Copy diagnostics</button> and paste it when you ask for help, or <button class="link" data-open="logs">open the log folder</button>.
         <details class="more"><summary>Show the log</summary><pre id="log" class="log"></pre></details></div></div>
@@ -93,7 +99,7 @@
         <div class="sbody"><h3>Blocked devices</h3><div id="blocked" class="list"></div></div>
       </div>
       <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></div>
-        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.22 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
+        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.23 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
       </div>
     </section>
   </main>
@@ -105,6 +111,7 @@
       <p class="small">A few things once, so everything after just works.</p>
       <label class="wl-row">Name of this computer <input id="wl-name" maxlength="60" /></label>
       <label class="wl-row row"><input type="checkbox" id="wl-auto" checked /> Start bekdesk when I sign in, so other computers can reach this one</label>
+      <label class="wl-row row hidden" id="wl-admin-row"><input type="checkbox" id="wl-admin" checked /> Also work on the lock screen and set up extra screens (Windows asks for admin permission once)</label>
       <ol class="wl-steps" id="wl-steps"></ol>
       <button class="btn primary" id="wl-go">Get started</button>
     </div>

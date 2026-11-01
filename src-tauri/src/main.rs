@@ -158,6 +158,34 @@ fn set_stay_awake(app: Core, fp: String, on: bool) {
     app.save();
 }
 
+/// Whether the Windows lock screen helper is set up; checked once, then after each change (the check runs `sc`).
+static LOCK_SCREEN: std::sync::OnceLock<std::sync::Mutex<bool>> = std::sync::OnceLock::new();
+fn lock_screen_on() -> bool {
+    *LOCK_SCREEN.get_or_init(|| std::sync::Mutex::new(bekdesk_core::service::installed())).lock().unwrap()
+}
+
+/// Welcome screen / Settings: set up (or remove) the lock screen helper, plus the extra-screen driver, behind one
+/// Windows admin prompt. Waits for both parts to download first.
+#[tauri::command]
+async fn admin_setup(app: Core<'_>, enable: bool) -> Result<bool, String> {
+    use bekdesk_core::{engines, service};
+    let r: anyhow::Result<()> = async {
+        let args = if enable {
+            let deskflow = engines::ensure(&app, "deskflow", "components").await?;
+            let inf = engines::ensure(&app, "vdd", "components").await.ok();
+            let folder = deskflow.parent().map(|p| p.display().to_string()).unwrap_or_default();
+            vec!["--admin-setup".into(), service::user_sid()?, folder, inf.map_or("-".into(), |p| p.display().to_string())]
+        } else {
+            vec!["--uninstall-service".to_string()]
+        };
+        tokio::task::spawn_blocking(move || service::elevated(&args)).await?
+    }
+    .await;
+    let now = service::installed();
+    *LOCK_SCREEN.get_or_init(|| std::sync::Mutex::new(now)).lock().unwrap() = now;
+    r.map(|()| now).map_err(|e| format!("{e:#}"))
+}
+
 /// Settings: scrolling while another computer controls this one; used from the next Share Input session.
 #[tauri::command]
 fn set_scroll(app: Core, speed: f64, invert: bool) {
@@ -328,6 +356,7 @@ fn snapshot(app: Core) -> serde_json::Value {
     v["me"]["screens"] = display::screens();
     v["me"]["scroll_lock"] = modes::scroll_locked(&app).into();
     v["version"] = env!("CARGO_PKG_VERSION").into();
+    v["lock_screen"] = if cfg!(windows) { lock_screen_on().into() } else { serde_json::Value::Null };
     v["update"] = match &*bekdesk_core::update::STATE.lock().unwrap() {
         Some(Ok(Some(latest))) => serde_json::json!({"available": latest}),
         Some(Err(e)) => serde_json::json!({"error": e}),
@@ -539,6 +568,27 @@ fn main() {
         let r = display::install_elevated(std::path::Path::new(&args[2]));
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    // Started by Windows as the lock screen helper service.
+    if args.get(1).map(String::as_str) == Some("--service") {
+        bekdesk_core::service::run_service();
+        return;
+    }
+    // Elevated (one UAC prompt): `--admin-setup <user SID> <deskflow folder> <driver .inf or ->` or `--uninstall-service`.
+    if args.get(1).map(String::as_str) == Some("--admin-setup") && args.len() == 5 {
+        let r = bekdesk_core::service::install(&args[2], std::path::Path::new(&args[3])).and_then(|()| {
+            if args[4] != "-" && display::vdd_display().is_none() {
+                display::install_elevated(std::path::Path::new(&args[4]))?;
+            }
+            Ok(())
+        });
+        let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
+        std::process::exit(if r.is_ok() { 0 } else { 1 });
+    }
+    if args.get(1).map(String::as_str) == Some("--uninstall-service") {
+        let r = bekdesk_core::service::uninstall();
+        let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
+        std::process::exit(if r.is_ok() { 0 } else { 1 });
+    }
     // AppImages (Moonlight on Linux) normally need FUSE 2, which Fedora doesn't install by default; this runs them without.
     #[cfg(target_os = "linux")]
     std::env::set_var("APPIMAGE_EXTRACT_AND_RUN", "1");
@@ -668,7 +718,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_scroll, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {
