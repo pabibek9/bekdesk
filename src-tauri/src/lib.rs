@@ -10,6 +10,7 @@ pub mod engines;
 pub mod identity;
 pub mod modes;
 pub mod net;
+pub mod service;
 pub mod update;
 
 pub use app::App;
