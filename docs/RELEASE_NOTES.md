@@ -1,4 +1,8 @@
-## bekdesk 0.1.26 — preview
+## bekdesk 0.1.27 — preview
+
+Everything below from 0.1.23 to 0.1.26 in one release: lock screen, sound both ways, microphone, camera, shared files, right-click Send with bekdesk, Wake, Lock all, battery and Ctrl+Alt+Arrow switching.
+
+## bekdesk 0.1.26
 
 ### Handy extras
 - **Ctrl+Alt+Arrow keys** jump the mouse straight to the computer on that side (Ctrl+Alt+Home brings it back).
