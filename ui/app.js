@@ -108,7 +108,10 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const paired = d.trusted || d.once;
   const sharing = ses && ses.origin && ses.mode === "input", controlled = ses && !ses.origin && ses.mode === "input";
   let msg = "", act = "";
-  if (!d.online) msg = paired ? `<div class="hint">${name} is asleep, switched off, or bekdesk is closed on it. It reconnects by itself when it's back.</div>` : "";
+  if (!d.online) {
+    msg = paired ? `<div class="hint">${name} is asleep, switched off, or bekdesk is closed on it. It reconnects by itself when it's back.</div>` : "";
+    if (d.can_wake) act = `<button class="btn primary" data-wake="${esc(d.fp)}">Wake ${name}</button>`;
+  }
   else if (d.locked) msg = `<div class="hint warn">${name} is locked. Unlock it on that computer to continue; while you share, bekdesk then keeps it awake so it doesn't lock again from being idle.</div>`;
   else if (!paired) msg = `<div class="hint">Pick a mode to connect. ${name} asks to approve; check both screens show <b>${esc(d.code)}</b>.</div>`;
   else if (sharing && S.me.scroll_lock) { msg = `<div class="hint warn">Scroll Lock is on, so the mouse stays on this PC.</div>`; act = `<button class="btn primary" data-scroll-lock="1">Turn off Scroll Lock</button>`; }
@@ -157,7 +160,7 @@ function entities() {
     out.push({
       no,
       icon: iconFor(d.kind, d.os),
-      key: d.fp, kind: "pc", online: d.online, name: d.name || "Unknown device", os: d.os, sub: osName(d.os) + (d.trusted ? " · paired" : d.once ? " · allowed until restart" : ""), details: !!ses || !!d.note, pill, mode,
+      key: d.fp, kind: "pc", online: d.online, name: d.name || "Unknown device", os: d.os, sub: osName(d.os) + (d.trusted ? " · paired" : d.once ? " · allowed until restart" : "") + (d.battery ? ` · battery ${d.battery.pct}%${d.battery.charging ? " (charging)" : d.battery.pct <= 15 ? " · low" : ""}` : ""), details: !!ses || !!d.note, pill, mode,
       modes: ["input", "extend", "mirror", "off"], disabled: !d.online || !!busy[d.fp], extendOk: winHost, note: d.note,
       extra: pcExtra(d, ses, mode, pill, sendFail),
     });
@@ -285,6 +288,8 @@ $("#device-list").addEventListener("click", async (e) => {
   if (act) pairAction(act);
   const r = e.target.closest("[data-reconnect]");
   if (r) reconnect(r.dataset.reconnect);
+  const wk = e.target.closest("[data-wake]");
+  if (wk) { try { await invoke("wake", { fp: wk.dataset.wake }); toast("Wake signal sent. It can take a minute to start."); } catch (err) { toast(`Couldn't wake it: ${err}`); } return; }
   if (e.target.closest("[data-scroll-lock]")) { await call("toggle_scroll_lock"); setTimeout(refresh, 300); return; }
   const f = e.target.closest("[data-forget-card]");
   if (f && armed(f, "Press again to forget it")) { await call("forget", { fp: f.dataset.forgetCard }); toast("Forgotten. It asks for the code again next time."); refresh(); }
@@ -879,6 +884,7 @@ function renderTheme() {
   $("#theme-btn span").textContent = document.documentElement.classList.contains("dark") ? "Light mode" : "Dark mode";
 }
 $("#theme-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme]"); if (b) { setTheme(b.dataset.theme); renderTheme(); } });
+$("#lock-all").addEventListener("click", () => call("lock_all"));
 $("#theme-btn").addEventListener("click", () => { setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"); renderTheme(); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderTheme);
 renderTheme();

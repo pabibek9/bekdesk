@@ -167,6 +167,24 @@ async fn set_mic(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(),
     Ok(())
 }
 
+/// Card → Wake: switch on a sleeping paired computer over the network.
+#[tauri::command]
+fn wake(app: Core, fp: String) -> Result<(), String> {
+    let mac = app.cfg.lock().unwrap().trusted.get(&fp).map(|t| t.mac.clone()).unwrap_or_default();
+    net::wake(&mac).map_err(|e| format!("{e:#}"))
+}
+
+/// Sidebar → Lock all: lock every computer this one is connected with, then this one.
+#[tauri::command]
+async fn lock_all(app: Core<'_>) -> Result<(), String> {
+    let peers: Vec<String> = app.sessions.lock().unwrap().keys().filter(|k| *k != "tablet").cloned().collect();
+    for fp in peers {
+        let _ = net::request(&app, &fp, &net::Req::Lock).await;
+    }
+    display::lock_screen();
+    Ok(())
+}
+
 /// Whether this computer stays awake (no idle lock or sleep) while `fp` controls it with Share Input.
 #[tauri::command]
 fn set_stay_awake(app: Core, fp: String, on: bool) {
@@ -850,7 +868,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_mic, shared_files, open_shared, take_pending_send, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_mic, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

@@ -47,6 +47,8 @@ pub enum Req {
     Audio,
     /// The asking computer sends its sound here to play (also on this computer's speakers).
     AudioPush,
+    /// Lock this computer's screen ("Lock all" on a computer it's connected with).
+    Lock,
     /// Send this computer's microphone to the asking computer (only if the user shared it with that computer).
     Mic,
 }
@@ -66,6 +68,14 @@ pub struct Hello {
     /// Its lock screen is showing (older bekdesk versions don't say).
     #[serde(default)]
     pub locked: bool,
+    /// Battery level in percent and whether it's charging; None on desktops.
+    #[serde(default)]
+    pub battery: Option<u8>,
+    #[serde(default)]
+    pub charging: bool,
+    /// Network card address, so a paired computer can wake this one later (Wake-on-LAN).
+    #[serde(default)]
+    pub mac: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -284,6 +294,15 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
                 _ = ended => Ok(()),
             }
         }
+        Req::Lock => {
+            let linked = app.sessions.lock().unwrap().contains_key(&fp);
+            if !linked || !app.knows(&fp) {
+                return write_msg(&mut s, &Resp::err("not connected")).await;
+            }
+            app.log(format!("locked by {}", app.peer_name(&fp)));
+            crate::display::lock_screen();
+            write_msg(&mut s, &Resp::ok()).await
+        }
         Req::Mic => {
             let linked = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
             if !linked(&app) || !app.knows(&fp) || !app.cfg.lock().unwrap().mic_share.contains(&fp) {
@@ -405,6 +424,48 @@ pub async fn request(app: &App, fp: &str, req: &Req) -> Result<(Stream, IpAddr)>
 }
 
 /// This computer's LAN address (the interface a route to the network would use), for "your address".
+/// This computer's network card address (aa:bb:cc:dd:ee:ff) on the network bekdesk uses; looked up once.
+pub fn local_mac() -> String {
+    static MAC: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MAC.get_or_init(|| {
+        let Some(ip) = local_ip() else { return String::new() };
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let ps = format!("(Get-NetAdapter -InterfaceIndex (Get-NetIPAddress -IPAddress '{ip}').InterfaceIndex).MacAddress");
+            let o = std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).creation_flags(0x0800_0000).output();
+            o.map(|o| String::from_utf8_lossy(&o.stdout).trim().replace('-', ":").to_lowercase()).unwrap_or_default()
+        }
+        #[cfg(not(windows))]
+        {
+            let o = std::process::Command::new("ip").args(["-o", "-4", "addr"]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let ifname = o.lines().find(|l| l.contains(&format!(" {ip}/"))).and_then(|l| l.split_whitespace().nth(1)).unwrap_or("").to_string();
+            std::fs::read_to_string(format!("/sys/class/net/{ifname}/address")).map(|s| s.trim().to_string()).unwrap_or_default()
+        }
+    })
+    .clone()
+}
+
+/// Wake a sleeping or switched-off computer on this network (its network card and BIOS must allow Wake-on-LAN).
+pub fn wake(mac: &str) -> Result<()> {
+    let bytes: Vec<u8> = mac.split([':', '-']).filter_map(|h| u8::from_str_radix(h, 16).ok()).collect();
+    if bytes.len() != 6 {
+        bail!("this computer's network address isn't known yet; it's learned while both computers are on");
+    }
+    let mut packet = vec![0xffu8; 6];
+    for _ in 0..16 {
+        packet.extend_from_slice(&bytes);
+    }
+    let s = std::net::UdpSocket::bind("0.0.0.0:0")?;
+    s.set_broadcast(true)?;
+    s.send_to(&packet, "255.255.255.255:9")?;
+    if let Some(IpAddr::V4(v4)) = local_ip() {
+        let o = v4.octets();
+        let _ = s.send_to(&packet, (std::net::Ipv4Addr::new(o[0], o[1], o[2], 255), 9));
+    }
+    Ok(())
+}
+
 pub fn local_ip() -> Option<IpAddr> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.0.2.1:9").ok()?; // no packet is sent; this only picks the outgoing interface

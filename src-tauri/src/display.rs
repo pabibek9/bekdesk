@@ -645,6 +645,38 @@ pub fn keep_awake(on: bool) {
 }
 
 /// "laptop" if the machine has a built-in battery, else "desktop"; drives the device frame in Manage Screens.
+/// Battery level (percent) and whether it's charging; None without a battery.
+pub fn battery() -> Option<(u8, bool)> {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+        let mut s: SYSTEM_POWER_STATUS = std::mem::zeroed();
+        // BatteryFlag 128: no battery; 255: unknown.
+        if GetSystemPowerStatus(&mut s) == 0 || s.BatteryFlag & 128 != 0 || s.BatteryLifePercent > 100 {
+            return None;
+        }
+        return Some((s.BatteryLifePercent, s.ACLineStatus == 1));
+    }
+    #[cfg(not(windows))]
+    {
+        let dir = std::fs::read_dir("/sys/class/power_supply").ok()?.flatten().map(|e| e.path()).find(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("BAT")))?;
+        let pct = std::fs::read_to_string(dir.join("capacity")).ok()?.trim().parse::<u8>().ok()?;
+        let charging = std::fs::read_to_string(dir.join("status")).is_ok_and(|s| s.trim() == "Charging" || s.trim() == "Full");
+        Some((pct.min(100), charging))
+    }
+}
+
+/// Lock this computer's screen.
+pub fn lock_screen() {
+    let _ = if cfg!(windows) {
+        std::process::Command::new("rundll32.exe").arg("user32.dll,LockWorkStation").spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("pmset").arg("displaysleepnow").spawn()
+    } else {
+        std::process::Command::new("loginctl").arg("lock-session").spawn()
+    };
+}
+
 pub fn device_kind() -> &'static str {
     static KIND: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     KIND.get_or_init(|| {

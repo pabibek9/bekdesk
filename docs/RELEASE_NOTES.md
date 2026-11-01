@@ -1,3 +1,12 @@
+## bekdesk 0.1.26 — preview
+
+### Handy extras
+- **Ctrl+Alt+Arrow keys** jump the mouse straight to the computer on that side (Ctrl+Alt+Home brings it back).
+- **Lock all** (bottom of the sidebar): locks every computer you're connected with, and this one.
+- **Wake:** a sleeping or switched-off paired computer gets a **Wake** button. It needs Wake-on-LAN allowed in that computer's network settings/BIOS, and bekdesk learns its address while both are on.
+- **Battery** level of paired laptops shows on their card, with a "low" warning.
+- Game controllers already work on a computer you show with Extend or Duplicate.
+
 ## bekdesk 0.1.25 — preview
 
 ### Files
