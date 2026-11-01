@@ -18,10 +18,13 @@ pub fn run_dir() -> PathBuf {
     PathBuf::from(ROOT).join("run")
 }
 
-/// Whether the helper is set up (its files exist and the service is registered).
+/// Whether the helper is set up (its files exist and the service is registered). Also false after an update that
+/// brings a part the last setup didn't install (the bekdesk camera), so Settings offers to run setup again.
 pub fn installed() -> bool {
+    let cam_shipped = std::env::current_exe().is_ok_and(|e| e.with_file_name("resources").join("softcam.dll").exists());
     cfg!(windows)
         && bin_dir().join("deskflow").join("deskflow-core.exe").exists()
+        && (!cam_shipped || bin_dir().join("softcam.dll").exists())
         && std::process::Command::new("sc").args(["query", NAME]).stdout(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
 }
 
@@ -116,6 +119,12 @@ mod win {
         run("icacls", &[&run_d.to_string_lossy(), "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", &grant])?;
         std::fs::copy(std::env::current_exe()?, bin.join("bekdesk-service.exe"))?;
         copy_dir(deskflow, &bin.join("deskflow"))?;
+        // The "bekdesk camera" (Softcam), shipped next to bekdesk.exe; registered from the protected folder.
+        let cam = std::env::current_exe()?.with_file_name("resources").join("softcam.dll");
+        if cam.exists() {
+            std::fs::copy(&cam, bin.join("softcam.dll"))?;
+            run("regsvr32", &["/s", &bin.join("softcam.dll").to_string_lossy()])?;
+        }
         let path = format!("\"{}\" --service", bin.join("bekdesk-service.exe").display());
         run("sc", &["create", NAME, "binPath=", &path, "start=", "auto", "DisplayName=", "bekdesk lock screen helper"])?;
         let _ = run("sc", &["description", NAME, "Lets a computer that controls this one with bekdesk use the keyboard and mouse on the lock screen."]);
@@ -124,6 +133,10 @@ mod win {
 
     /// Runs elevated (`bekdesk --uninstall-service`).
     pub fn uninstall() -> Result<()> {
+        let cam = bin_dir().join("softcam.dll");
+        if cam.exists() {
+            let _ = run("regsvr32", &["/s", "/u", &cam.to_string_lossy()]);
+        }
         let _ = run("sc", &["stop", NAME]);
         std::thread::sleep(std::time::Duration::from_millis(800));
         let _ = run("sc", &["delete", NAME]);

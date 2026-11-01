@@ -43,8 +43,16 @@ pub enum Req {
     Tunnel,
     Clip { kind: String, len: u64 },
     Files { items: Vec<FileItem>, paste: bool },
-    /// Send this computer's sound to the computer controlling it with Share Input (it plays there, not here).
+    /// Send this computer's sound to the asking computer (they're connected with Share Input, either way).
     Audio,
+    /// The asking computer sends its sound here to play (also on this computer's speakers).
+    AudioPush,
+    /// Send this computer's camera to the asking computer (only if the user shared it with that computer).
+    Camera,
+    /// Lock this computer's screen ("Lock all" on a computer it's connected with).
+    Lock,
+    /// Send this computer's microphone to the asking computer (only if the user shared it with that computer).
+    Mic,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -62,6 +70,14 @@ pub struct Hello {
     /// Its lock screen is showing (older bekdesk versions don't say).
     #[serde(default)]
     pub locked: bool,
+    /// Battery level in percent and whether it's charging; None on desktops.
+    #[serde(default)]
+    pub battery: Option<u8>,
+    #[serde(default)]
+    pub charging: bool,
+    /// Network card address, so a paired computer can wake this one later (Wake-on-LAN).
+    #[serde(default)]
+    pub mac: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -257,11 +273,13 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
             receive_files(&app, &fp, &mut s, items, paste).await
         }
         Req::Audio => {
-            // Only the computer already controlling this one gets its sound, and only while it does.
-            let controlled = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| !x.origin && x.mode == Mode::Input);
-            if !controlled(&app) || !app.allowed(&fp, Cap::Input) {
+            // Only a paired computer connected with Share Input (either way) gets this computer's sound, and only while it is.
+            let linked = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
+            if !linked(&app) || !app.knows(&fp) {
                 return write_msg(&mut s, &Resp::err("Share Input isn't on")).await;
             }
+            // The computer being controlled goes quiet while its sound plays on the controlling one.
+            let mute_here = app.sessions.lock().unwrap().get(&fp).is_some_and(|x| !x.origin);
             if let Err(e) = crate::audio::can_send() {
                 return write_msg(&mut s, &Resp::err(format!("{e:#}"))).await;
             }
@@ -269,12 +287,72 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
             app.log(format!("sending sound to {}", app.peer_name(&fp)));
             // Stop when Share Input ends, even if the other computer vanished without closing the connection.
             let ended = async {
-                while controlled(&app) {
+                while linked(&app) {
                     tokio::time::sleep(Duration::from_secs(2)).await;
                 }
             };
             tokio::select! {
-                r = crate::audio::send(&mut s) => r,
+                r = crate::audio::send(&mut s, mute_here) => r,
+                _ = ended => Ok(()),
+            }
+        }
+        Req::Camera => {
+            let shared = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input) && app.cfg.lock().unwrap().cam_share.contains(&fp);
+            if !shared(&app) || !app.knows(&fp) {
+                return write_msg(&mut s, &Resp::err(format!("{} hasn't shared its camera with you (tick it on {} first)", app.name(), app.name()))).await;
+            }
+            write_msg(&mut s, &Resp::ok()).await?;
+            app.log(format!("sharing the camera with {}", app.peer_name(&fp)));
+            let ended = async {
+                while shared(&app) {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            };
+            tokio::select! {
+                r = crate::camera::send(&mut s) => r,
+                _ = ended => Ok(()),
+            }
+        }
+        Req::Lock => {
+            let linked = app.sessions.lock().unwrap().contains_key(&fp);
+            if !linked || !app.knows(&fp) {
+                return write_msg(&mut s, &Resp::err("not connected")).await;
+            }
+            app.log(format!("locked by {}", app.peer_name(&fp)));
+            crate::display::lock_screen();
+            write_msg(&mut s, &Resp::ok()).await
+        }
+        Req::Mic => {
+            let linked = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
+            if !linked(&app) || !app.knows(&fp) || !app.cfg.lock().unwrap().mic_share.contains(&fp) {
+                return write_msg(&mut s, &Resp::err(format!("{} hasn't shared its microphone with you (tick it on {} first)", app.name(), app.name()))).await;
+            }
+            write_msg(&mut s, &Resp::ok()).await?;
+            app.log(format!("sharing the microphone with {}", app.peer_name(&fp)));
+            let ended = async {
+                while linked(&app) && app.cfg.lock().unwrap().mic_share.contains(&fp) {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            };
+            tokio::select! {
+                r = crate::audio::send_mic(&mut s) => r,
+                _ = ended => Ok(()),
+            }
+        }
+        Req::AudioPush => {
+            let linked = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
+            if !linked(&app) || !app.knows(&fp) {
+                return write_msg(&mut s, &Resp::err("Share Input isn't on")).await;
+            }
+            write_msg(&mut s, &Resp::ok()).await?;
+            app.log(format!("playing sound from {}", app.peer_name(&fp)));
+            let ended = async {
+                while linked(&app) {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            };
+            tokio::select! {
+                r = crate::audio::play(&mut s) => r,
                 _ = ended => Ok(()),
             }
         }
@@ -365,6 +443,48 @@ pub async fn request(app: &App, fp: &str, req: &Req) -> Result<(Stream, IpAddr)>
 }
 
 /// This computer's LAN address (the interface a route to the network would use), for "your address".
+/// This computer's network card address (aa:bb:cc:dd:ee:ff) on the network bekdesk uses; looked up once.
+pub fn local_mac() -> String {
+    static MAC: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MAC.get_or_init(|| {
+        let Some(ip) = local_ip() else { return String::new() };
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let ps = format!("(Get-NetAdapter -InterfaceIndex (Get-NetIPAddress -IPAddress '{ip}').InterfaceIndex).MacAddress");
+            let o = std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).creation_flags(0x0800_0000).output();
+            o.map(|o| String::from_utf8_lossy(&o.stdout).trim().replace('-', ":").to_lowercase()).unwrap_or_default()
+        }
+        #[cfg(not(windows))]
+        {
+            let o = std::process::Command::new("ip").args(["-o", "-4", "addr"]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let ifname = o.lines().find(|l| l.contains(&format!(" {ip}/"))).and_then(|l| l.split_whitespace().nth(1)).unwrap_or("").to_string();
+            std::fs::read_to_string(format!("/sys/class/net/{ifname}/address")).map(|s| s.trim().to_string()).unwrap_or_default()
+        }
+    })
+    .clone()
+}
+
+/// Wake a sleeping or switched-off computer on this network (its network card and BIOS must allow Wake-on-LAN).
+pub fn wake(mac: &str) -> Result<()> {
+    let bytes: Vec<u8> = mac.split([':', '-']).filter_map(|h| u8::from_str_radix(h, 16).ok()).collect();
+    if bytes.len() != 6 {
+        bail!("this computer's network address isn't known yet; it's learned while both computers are on");
+    }
+    let mut packet = vec![0xffu8; 6];
+    for _ in 0..16 {
+        packet.extend_from_slice(&bytes);
+    }
+    let s = std::net::UdpSocket::bind("0.0.0.0:0")?;
+    s.set_broadcast(true)?;
+    s.send_to(&packet, "255.255.255.255:9")?;
+    if let Some(IpAddr::V4(v4)) = local_ip() {
+        let o = v4.octets();
+        let _ = s.send_to(&packet, (std::net::Ipv4Addr::new(o[0], o[1], o[2], 255), 9));
+    }
+    Ok(())
+}
+
 pub fn local_ip() -> Option<IpAddr> {
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("192.0.2.1:9").ok()?; // no packet is sent; this only picks the outgoing interface

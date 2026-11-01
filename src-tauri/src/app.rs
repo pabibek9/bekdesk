@@ -47,6 +47,9 @@ pub struct Trusted {
     pub os: String,
     #[serde(default)]
     pub caps: Caps,
+    /// Its network card address, for Wake.
+    #[serde(default)]
+    pub mac: String,
 }
 
 /// Position of a device in the Workspace view, in workspace units (1 unit = 10 physical px).
@@ -83,6 +86,12 @@ pub struct Config {
     /// Scrolling while another computer controls this one: speed multiplier (0 = normal) and direction.
     pub scroll_speed: f64,
     pub invert_scroll: bool,
+    /// Computers allowed to use this computer's microphone (the owner ticks it), and whose microphone is used here.
+    pub mic_share: std::collections::HashSet<String>,
+    pub use_mic: std::collections::HashSet<String>,
+    /// Computers allowed to use this computer's camera (the owner ticks it), and whose camera is used here.
+    pub cam_share: std::collections::HashSet<String>,
+    pub use_cam: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -165,6 +174,8 @@ pub struct App {
     pub stale: Mutex<HashSet<String>>,
     /// Peers whose lock screen is showing, as they last reported.
     pub locked: Mutex<HashSet<String>>,
+    /// Battery (percent, charging) of paired laptops, from their last report.
+    pub battery: Mutex<HashMap<String, (u8, bool)>>,
     pub log: Mutex<VecDeque<String>>,
     pub clip_last: Mutex<u64>,
     pub attempts: Mutex<HashMap<String, Instant>>,
@@ -213,6 +224,7 @@ impl App {
             notes: Default::default(),
             stale: Default::default(),
             locked: Default::default(),
+            battery: Default::default(),
             log: Default::default(),
             clip_last: Default::default(),
             attempts: Default::default(),
@@ -307,7 +319,7 @@ impl App {
         if always {
             self.cfg.lock().unwrap().trusted.insert(
                 fp.to_string(),
-                Trusted { name: name.into(), os: os.into(), caps: Caps::default() },
+                Trusted { name: name.into(), os: os.into(), caps: Caps::default(), mac: String::new() },
             );
             self.save();
         } else {
@@ -377,6 +389,30 @@ impl App {
             kind: crate::display::device_kind().into(),
             monitors: self.monitors.lock().unwrap().chars().take(200).collect(),
             locked: crate::display::is_locked(),
+            battery: crate::display::battery().map(|b| b.0),
+            charging: crate::display::battery().is_some_and(|b| b.1),
+            mac: crate::net::local_mac(),
+        }
+    }
+
+    /// Keep what a paired computer reported about itself: locked, battery, and its address for Wake.
+    pub fn note_hello(&self, fp: &str, h: &crate::net::Hello) {
+        let mut l = self.locked.lock().unwrap();
+        if h.locked { l.insert(fp.to_string()) } else { l.remove(fp) };
+        drop(l);
+        let mut b = self.battery.lock().unwrap();
+        match h.battery {
+            Some(p) => b.insert(fp.to_string(), (p, h.charging)),
+            None => b.remove(fp),
+        };
+        drop(b);
+        if !h.mac.is_empty() {
+            let mut cfg = self.cfg.lock().unwrap();
+            let changed = cfg.trusted.get_mut(fp).is_some_and(|t| t.mac != h.mac && { t.mac = h.mac.clone(); true });
+            drop(cfg);
+            if changed {
+                self.save();
+            }
         }
     }
 
@@ -429,6 +465,8 @@ impl App {
                     "trusted": t.is_some(),
                     "once": once.contains(fp),
                     "locked": self.locked.lock().unwrap().contains(fp),
+                    "battery": self.battery.lock().unwrap().get(fp).map(|b| json!({"pct": b.0, "charging": b.1})),
+                    "can_wake": t.is_some_and(|t| !t.mac.is_empty()),
                     "caps": t.map(|t| t.caps),
                     "mode": cfg.modes.get(fp).copied().unwrap_or_default(),
                     "session": sessions.get(fp),
@@ -457,6 +495,11 @@ impl App {
             "let_sleep": cfg.let_sleep,
             "scroll": {"speed": if cfg.scroll_speed > 0.0 { cfg.scroll_speed } else { 1.0 }, "invert": cfg.invert_scroll},
             "hearing": crate::audio::status(),
+            "mic_share": cfg.mic_share,
+            "use_mic": cfg.use_mic,
+            "cam_share": cfg.cam_share,
+            "use_cam": cfg.use_cam,
+            "camera": crate::camera::status(),
             "pointer": cfg.pointer,
             "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),

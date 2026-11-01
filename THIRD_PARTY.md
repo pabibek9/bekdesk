@@ -16,6 +16,12 @@ available at the linked tag.
 | Moonlight (moonlight-qt) | Display viewer on Windows/macOS | 6.2.0 | GPL-3.0 | https://github.com/moonlight-stream/moonlight-qt/tree/v6.2.0 |
 | Virtual Display Driver | Virtual monitor for Extend on Windows | 25.7.23 | MIT | https://github.com/VirtualDrivers/Virtual-Display-Driver/tree/25.7.23 |
 
+## Bundled with the Windows installer
+
+| Component | Used for | Version | License | Source |
+|---|---|---|---|---|
+| Softcam | The "bekdesk camera" virtual webcam (built from source in CI; display name changed) | 1.8.1 | MIT | https://github.com/tshino/softcam/tree/v1.8.1 |
+
 Android receivers are the upstream Moonlight for Android app (GPL-3.0,
 https://github.com/moonlight-stream/moonlight-android) or its fork Artemis (GPL-3.0,
 https://github.com/ClassicOldSong/moonlight-android), installed by the user from their official sources.

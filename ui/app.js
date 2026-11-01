@@ -75,12 +75,34 @@ const speedSlider = (key, name) => {
   return `<label class="spd">Mouse speed on ${esc(name)}<input type="range" min="0.5" max="3" step="0.25" value="${v}" data-speed="${esc(key)}" /><b>${v.toFixed(2).replace(/0$/, "")}×</b></label>`;
 };
 
-// Share Input: hear the controlled computer here (it goes quiet there). Only Linux can send its sound so far.
-const hearToggle = (d) => {
-  if (d.os !== "linux") return "";
-  const on = (S.hear || []).includes(d.fp), st = (S.hearing || {})[d.fp];
-  const note = on && st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? `Playing ${esc(d.name)}'s sound here.` : `No sound yet: ${esc(st)}`}</div>` : "";
-  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC (muted on ${esc(d.name)})</label>${note}`;
+// Share Input (either way): hear that computer here, and/or play this computer's sound there.
+// Ticking "play this PC's sound" on several computers plays it on all their speakers at once.
+const canSend = (os) => os === "linux" || os === "windows";
+const soundNote = (st, ok) => st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? ok : `No sound yet: ${esc(st)}`}</div>` : "";
+const hearToggle = (d, controlling) => {
+  if (!canSend(d.os)) return "";
+  const on = (S.hear || []).includes(d.fp), st = on && (S.hearing || {})["pull:" + d.fp];
+  const muted = controlling && d.os === "linux" ? ` (muted on ${esc(d.name)})` : "";
+  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC${muted}</label>${soundNote(st, `Playing ${esc(d.name)}'s sound here.`)}`;
+};
+// Microphone: the owner shares it first; then the other computer can use it as a microphone here.
+const micToggles = (d) => {
+  const share = (S.mic_share || []).includes(d.fp), use = (S.use_mic || []).includes(d.fp), st = use && (S.hearing || {})["mic:" + d.fp];
+  const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-mic-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's microphone</label>` : "";
+  const theirs = canSend(d.os) ? `<label class="snd"><input type="checkbox" data-mic-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s microphone here${S.me.os === "linux" ? ` (pick "bekdesk-microphone" in your app)` : S.me.os === "windows" ? ` (pick "CABLE Output" in your app)` : ""}</label>${soundNote(st, `${esc(d.name)}'s microphone is on here.`)}` : "";
+  return mine + theirs;
+};
+// Camera: the owner shares it first; then on Windows it appears as "bekdesk camera" in Zoom, Teams, browsers…
+const camToggles = (d) => {
+  const share = (S.cam_share || []).includes(d.fp), use = (S.use_cam || []).includes(d.fp), st = use && (S.camera || {})[d.fp];
+  const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's camera</label>` : "";
+  const theirs = canSend(d.os) && S.me.os === "windows" ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser)</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`)}` : "";
+  return mine + theirs;
+};
+const pushToggle = (d) => {
+  if (!canSend(S.me.os)) return "";
+  const on = !!(S.sound || {})[d.fp], st = on && (S.hearing || {})["push:" + d.fp];
+  return `<label class="snd"><input type="checkbox" data-sound="${esc(d.fp)}" ${on ? "checked" : ""}/> Also play this PC's sound on ${esc(d.name)}'s speakers</label>${soundNote(st, `This PC's sound plays on ${esc(d.name)} too.`)}`;
 };
 // Being controlled: stay awake so the screen doesn't blank and lock while you work from the other keyboard.
 const awakeToggle = (d) => `<label class="snd"><input type="checkbox" data-awake="${esc(d.fp)}" ${(S.let_sleep || []).includes(d.fp) ? "" : "checked"}/> Keep this computer awake and unlocked while ${esc(d.name)} controls it</label>`;
@@ -93,7 +115,10 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const paired = d.trusted || d.once;
   const sharing = ses && ses.origin && ses.mode === "input", controlled = ses && !ses.origin && ses.mode === "input";
   let msg = "", act = "";
-  if (!d.online) msg = paired ? `<div class="hint">${name} is asleep, switched off, or bekdesk is closed on it. It reconnects by itself when it's back.</div>` : "";
+  if (!d.online) {
+    msg = paired ? `<div class="hint">${name} is asleep, switched off, or bekdesk is closed on it. It reconnects by itself when it's back.</div>` : "";
+    if (d.can_wake) act = `<button class="btn primary" data-wake="${esc(d.fp)}">Wake ${name}</button>`;
+  }
   else if (d.locked) msg = `<div class="hint warn">${name} is locked. Unlock it on that computer to continue; while you share, bekdesk then keeps it awake so it doesn't lock again from being idle.</div>`;
   else if (!paired) msg = `<div class="hint">Pick a mode to connect. ${name} asks to approve; check both screens show <b>${esc(d.code)}</b>.</div>`;
   else if (sharing && S.me.scroll_lock) { msg = `<div class="hint warn">Scroll Lock is on, so the mouse stays on this PC.</div>`; act = `<button class="btn primary" data-scroll-lock="1">Turn off Scroll Lock</button>`; }
@@ -107,7 +132,10 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const more = [
     mode === "extend" || mode === "input" ? speedSlider(d.fp, d.name) : "",
     mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "",
-    sharing ? hearToggle(d) : "",
+    sharing || controlled ? hearToggle(d, sharing) : "",
+    sharing || controlled ? pushToggle(d) : "",
+    sharing || controlled ? micToggles(d) : "",
+    sharing || controlled ? camToggles(d) : "",
     controlled ? awakeToggle(d) : "",
     mode !== "off" && !busy[d.fp] && !stuck ? `<div class="acts1">${reconnectBtn(d.fp)}</div>` : "",
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
@@ -140,7 +168,7 @@ function entities() {
     out.push({
       no,
       icon: iconFor(d.kind, d.os),
-      key: d.fp, kind: "pc", online: d.online, name: d.name || "Unknown device", os: d.os, sub: osName(d.os) + (d.trusted ? " · paired" : d.once ? " · allowed until restart" : ""), details: !!ses || !!d.note, pill, mode,
+      key: d.fp, kind: "pc", online: d.online, name: d.name || "Unknown device", os: d.os, sub: osName(d.os) + (d.trusted ? " · paired" : d.once ? " · allowed until restart" : "") + (d.battery ? ` · battery ${d.battery.pct}%${d.battery.charging ? " (charging)" : d.battery.pct <= 15 ? " · low" : ""}` : ""), details: !!ses || !!d.note, pill, mode,
       modes: ["input", "extend", "mirror", "off"], disabled: !d.online || !!busy[d.fp], extendOk: winHost, note: d.note,
       extra: pcExtra(d, ses, mode, pill, sendFail),
     });
@@ -268,6 +296,8 @@ $("#device-list").addEventListener("click", async (e) => {
   if (act) pairAction(act);
   const r = e.target.closest("[data-reconnect]");
   if (r) reconnect(r.dataset.reconnect);
+  const wk = e.target.closest("[data-wake]");
+  if (wk) { try { await invoke("wake", { fp: wk.dataset.wake }); toast("Wake signal sent. It can take a minute to start."); } catch (err) { toast(`Couldn't wake it: ${err}`); } return; }
   if (e.target.closest("[data-scroll-lock]")) { await call("toggle_scroll_lock"); setTimeout(refresh, 300); return; }
   const f = e.target.closest("[data-forget-card]");
   if (f && armed(f, "Press again to forget it")) { await call("forget", { fp: f.dataset.forgetCard }); toast("Forgotten. It asks for the code again next time."); refresh(); }
@@ -359,11 +389,27 @@ $("#device-list").addEventListener("change", async (e) => {
     call("set_stay_awake", { fp, on });
     return;
   }
+  if (e.target.dataset.camShare || e.target.dataset.camUse) {
+    const share = !!e.target.dataset.camShare, fp = e.target.dataset.camShare || e.target.dataset.camUse, on = e.target.checked;
+    const k = share ? "cam_share" : "use_cam";
+    S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
+    call("set_cam", { fp, share, on });
+    return;
+  }
+  if (e.target.dataset.micShare || e.target.dataset.micUse) {
+    const share = !!e.target.dataset.micShare, fp = e.target.dataset.micShare || e.target.dataset.micUse, on = e.target.checked;
+    const k = share ? "mic_share" : "use_mic";
+    S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
+    call("set_mic", { fp, share, on });
+    return;
+  }
   if (e.target.dataset.sound) {
     const key = e.target.dataset.sound, on = e.target.checked;
     await call("set_sound", { key, on });
     S.sound = { ...(S.sound || {}), [key]: on };
-    reconnect(key); // the stream picks up the sound setting when it starts
+    // A screen stream picks up the sound setting when it starts; Share Input sound starts by itself.
+    const d = S.devices.find((x) => x.fp === key);
+    if (key === "tablet" || (d && d.session && d.session.mode !== "input")) reconnect(key);
     return;
   }
   if (e.target.id === "tab-res") call("set_tablet", { mode: S.tablet, res: e.target.value }).then(refresh);
@@ -697,7 +743,60 @@ $("#canvas").addEventListener("pointercancel", endDrag);
 const fmtBytes = (n) => n > 1e9 ? (n / 1e9).toFixed(2) + " GB" : n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : n > 1e3 ? (n / 1e3).toFixed(0) + " KB" : n + " B";
 const fmtTime = (s) => s > 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m` : s > 60 ? `${Math.floor(s / 60)}m` : `${s}s`;
 
+// ---------- shared files ----------
+// Everything other computers sent here, newest first; open it, find it, or pass it on to another computer.
+let galleryAt = 0, galleryKey = "";
+async function renderGallery() {
+  const key = S.transfers.map((t) => t.id + t.state).join();
+  if (key === galleryKey && Date.now() - galleryAt < 15000) return;
+  galleryKey = key; galleryAt = Date.now();
+  let items = [];
+  try { items = await invoke("shared_files"); } catch (_) {}
+  const icon = `<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>`;
+  setHTML($("#gallery"), items.map((f, i) => `<div class="gitem" data-i="${i}">
+      <div class="gthumb">${f.thumb ? `<img src="${f.thumb}" alt="" loading="lazy" />` : icon}</div>
+      <div class="gname" title="${esc(f.name)}">${esc(f.name)}</div>
+      <div class="small">from ${esc(f.from)} · ${fmtBytes(f.size)}</div>
+      <div class="gacts"><button class="link" data-g="open">Open</button><button class="link" data-g="reveal">Show</button><button class="link" data-g="send">Send on</button></div>
+    </div>`).join("") || `<div class="empty">Files other computers send you show up here. They're saved in Downloads/bekdesk.</div>`);
+  $("#gallery")._items = items;
+}
+$("#gallery").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-g]"), it = e.target.closest(".gitem");
+  if (!b || !it) return;
+  const f = $("#gallery")._items[+it.dataset.i];
+  if (b.dataset.g === "send") return pickTargets([f.path]);
+  call("open_shared", { path: f.path, reveal: b.dataset.g === "reveal" });
+});
+
+// Choose which computers get these files (right-click → Send with bekdesk, or "Send on" above).
+function pickTargets(paths) {
+  const devs = S.devices.filter((d) => d.online && (d.trusted || d.once));
+  const m = $("#sendto");
+  const names = paths.map((p) => p.split(/[\\/]/).pop());
+  m.innerHTML = `<div class="dialog" role="dialog" aria-modal="true">
+    <h3>Send ${paths.length === 1 ? esc(names[0]) : `${paths.length} files`}</h3>
+    <div class="small">${devs.length ? "Pick the computers to send to." : "No paired computer is online right now. Open bekdesk on the other computer and try again."}</div>
+    <div class="pick">${devs.map((d) => `<label class="snd"><input type="checkbox" value="${esc(d.fp)}" checked /> ${esc(d.name)}</label>`).join("")}</div>
+    <div class="acts"><button class="btn primary" data-s="go" ${devs.length ? "" : "disabled"}>Send</button><button class="btn" data-s="cancel">Cancel</button></div></div>`;
+  m.classList.remove("hidden");
+  m.onclick = async (e) => {
+    const b = e.target.closest("[data-s]");
+    if (!b) return;
+    const fps = [...m.querySelectorAll("input:checked")].map((i) => i.value);
+    m.classList.add("hidden");
+    if (b.dataset.s !== "go") return;
+    for (const fp of fps) call("send_files", { fp, paths }).catch((err) => toast(`Couldn't send: ${err}`));
+    toast(`Sending to ${fps.length} computer${fps.length === 1 ? "" : "s"}…`);
+  };
+}
+async function checkPendingSend() {
+  try { const p = await invoke("take_pending_send"); if (p.length) pickTargets(p); } catch (_) {}
+}
+listen("send-pending", checkPendingSend);
+
 function renderActivity() {
+  renderGallery();
   const live = S.devices.filter((d) => d.session);
   const ts = S.tablet_state || {};
   const tab = S.tablet && S.tablet !== "off"
@@ -732,8 +831,8 @@ function renderSettings() {
   $("#lock-card").classList.toggle("hidden", S.lock_screen == null);
   if (S.lock_screen != null && !lockBusy) {
     $("#lock-text").textContent = S.lock_screen
-      ? "On. While another computer controls this one, its keyboard and mouse also work on the lock screen and on Windows admin prompts."
-      : "Off. When this PC locks, a computer controlling it can't type your password. Turn this on to fix that (Windows asks for admin permission once).";
+      ? "On. While another computer controls this one, its keyboard and mouse also work on the lock screen and on Windows admin prompts, and other computers' cameras can show up here as \"bekdesk camera\"."
+      : "Off. Turn this on so a computer controlling this one can type your password on the lock screen, and so other computers' cameras can show up here as \"bekdesk camera\" (Windows asks for admin permission once).";
     $("#lock-btn").textContent = S.lock_screen ? "Turn off" : "Turn on";
     $("#lock-btn").className = S.lock_screen ? "btn" : "btn primary";
   }
@@ -800,6 +899,7 @@ function renderTheme() {
   $("#theme-btn span").textContent = document.documentElement.classList.contains("dark") ? "Light mode" : "Dark mode";
 }
 $("#theme-seg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme]"); if (b) { setTheme(b.dataset.theme); renderTheme(); } });
+$("#lock-all").addEventListener("click", () => call("lock_all"));
 $("#theme-btn").addEventListener("click", () => { setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"); renderTheme(); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderTheme);
 renderTheme();
@@ -920,6 +1020,7 @@ function render() {
   renderGetReady();
 }
 let welcomed = false;
+setTimeout(checkPendingSend, 1500); // started with right-click → Send with bekdesk
 async function refresh() {
   try { S = await invoke("snapshot"); render(); } catch (e) { console.error(e); }
 }

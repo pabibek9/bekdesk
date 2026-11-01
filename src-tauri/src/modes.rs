@@ -394,7 +394,7 @@ fn server_config(app: &App) -> (String, String) {
             };
         }
     }
-    s += &format!("end\n\nsection: options\n\twin32KeepForeground = true\n\tclipboardSharing = false\n\tkeystroke(Control+Alt+Home) = switchToScreen({})\nend\n", App::screen_name(&app.id.fp));
+    s += &format!("end\n\nsection: options\n\twin32KeepForeground = true\n\tclipboardSharing = false\n\tkeystroke(Control+Alt+Home) = switchToScreen({})\n\tkeystroke(Control+Alt+Left) = switchInDirection(left)\n\tkeystroke(Control+Alt+Right) = switchInDirection(right)\n\tkeystroke(Control+Alt+Up) = switchInDirection(up)\n\tkeystroke(Control+Alt+Down) = switchInDirection(down)\nend\n", App::screen_name(&app.id.fp));
     (s, computers)
 }
 
@@ -1290,8 +1290,19 @@ pub async fn supervise(app: Arc<App>) {
                 let app = app.clone();
                 tokio::spawn(async move {
                     if let Ok(h) = net::hello(&app, &fp).await {
-                        let mut l = app.locked.lock().unwrap();
-                        if h.locked { l.insert(fp); } else { l.remove(&fp); }
+                        app.note_hello(&fp, &h);
+                    }
+                });
+            }
+        }
+        // About once a minute: battery level and network card address (for Wake) of every online paired computer.
+        if n % 30 == 15 {
+            let online: Vec<String> = app.peers.lock().unwrap().keys().filter(|fp| app.knows(fp)).cloned().collect();
+            for fp in online {
+                let app = app.clone();
+                tokio::spawn(async move {
+                    if let Ok(h) = net::hello(&app, &fp).await {
+                        app.note_hello(&fp, &h);
                     }
                 });
             }

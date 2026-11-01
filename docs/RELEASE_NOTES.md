@@ -1,3 +1,39 @@
+## bekdesk 0.1.26 — preview
+
+### Handy extras
+- **Ctrl+Alt+Arrow keys** jump the mouse straight to the computer on that side (Ctrl+Alt+Home brings it back).
+- **Lock all** (bottom of the sidebar): locks every computer you're connected with, and this one.
+- **Wake:** a sleeping or switched-off paired computer gets a **Wake** button. It needs Wake-on-LAN allowed in that computer's network settings/BIOS, and bekdesk learns its address while both are on.
+- **Battery** level of paired laptops shows on their card, with a "low" warning.
+- Game controllers already work on a computer you show with Extend or Duplicate.
+
+### Camera (first version)
+- The camera's owner ticks **Let <name> use this PC's camera**; on a Windows PC the other computer ticks **Use <name>'s camera here**, and it appears as **bekdesk camera** in Zoom, Teams, browsers and other camera apps.
+- Sending works from Windows and from Fedora (Fedora uses GStreamer, which GNOME already includes).
+- Receiving needs the "bekdesk camera" part installed by Settings → Lock screen, camera and admin prompts → Turn on.
+
+## bekdesk 0.1.25 — preview
+
+### Files
+- **Shared files** on Connections: everything other computers sent you, newest first, with picture previews. Open it, show it in its folder, or **Send on** to other computers.
+- **Right-click → Send with bekdesk:** on Windows under **Send to** ("Show more options" on Windows 11); on Fedora in GNOME Files under **Scripts**. Pick one or more computers and the files go to all of them.
+- "Open folder" buttons now work on Linux.
+
+## bekdesk 0.1.24 — preview
+
+### Sound in every direction
+- Windows can now send its sound too (before, only Linux could).
+- On any computer connected with Share Input (either way), under **More**:
+  - **Play <name>'s sound on this PC**: hear that computer here. When you control a Linux computer, its own speakers go quiet.
+  - **Also play this PC's sound on <name>'s speakers**: tick it on several computers to play this PC's sound on all of them at once. They aren't perfectly in sync yet; expect a slight echo in the same room.
+- Fixed a crash when ticking a sound box (the setting ran where it couldn't start the sound).
+
+### Microphone sharing
+- The microphone's owner ticks **Let <name> use this PC's microphone**; then the other computer ticks **Use <name>'s microphone here**.
+- Fedora: pick **bekdesk-microphone** in your app (bekdesk creates it while it's in use).
+- Windows: install the free **VB-CABLE** (vb-audio.com/Cable) once, then pick **CABLE Output** as the microphone in your app.
+- Not yet from or to a Mac.
+
 ## bekdesk 0.1.23 — preview
 
 ### New: keyboard and mouse on the Windows lock screen

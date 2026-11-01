@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, RunEvent, State, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, RunEvent, State, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 
 type Core<'a> = State<'a, Arc<App>>;
@@ -133,20 +133,70 @@ fn set_pointer(app: Core, key: String, factor: f64) {
 
 /// Whether `key` (a peer or "tablet") also plays this computer's sound. Takes effect on the next connect.
 #[tauri::command]
-fn set_sound(app: Core, key: String, on: bool) {
+// async: runs on the async runtime, which `audio::sync` needs to start its streams.
+async fn set_sound(app: Core<'_>, key: String, on: bool) -> Result<(), String> {
     app.cfg.lock().unwrap().sound.insert(key, on);
     app.save();
+    audio::sync(app.inner());
+    Ok(())
 }
 
 /// Whether the sound of `fp` (a computer this one controls with Share Input) plays here, muted there.
 #[tauri::command]
-fn set_hear(app: Core, fp: String, on: bool) {
+async fn set_hear(app: Core<'_>, fp: String, on: bool) -> Result<(), String> {
     let core = app.inner();
     let mut cfg = core.cfg.lock().unwrap();
     if on { cfg.hear.insert(fp.clone()) } else { cfg.hear.remove(&fp) };
     drop(cfg);
     core.save();
     audio::sync(core);
+    Ok(())
+}
+
+/// Microphone sharing: `share` lets `fp` use this computer's microphone; otherwise `fp`'s microphone is used here.
+#[tauri::command]
+async fn set_mic(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(), String> {
+    let core = app.inner();
+    {
+        let mut cfg = core.cfg.lock().unwrap();
+        let set = if share { &mut cfg.mic_share } else { &mut cfg.use_mic };
+        if on { set.insert(fp) } else { set.remove(&fp) };
+    }
+    core.save();
+    audio::sync(core);
+    Ok(())
+}
+
+/// Camera sharing: `share` lets `fp` use this computer's camera; otherwise `fp`'s camera is used here.
+#[tauri::command]
+async fn set_cam(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(), String> {
+    let core = app.inner();
+    {
+        let mut cfg = core.cfg.lock().unwrap();
+        let set = if share { &mut cfg.cam_share } else { &mut cfg.use_cam };
+        if on { set.insert(fp) } else { set.remove(&fp) };
+    }
+    core.save();
+    bekdesk_core::camera::sync(core);
+    Ok(())
+}
+
+/// Card → Wake: switch on a sleeping paired computer over the network.
+#[tauri::command]
+fn wake(app: Core, fp: String) -> Result<(), String> {
+    let mac = app.cfg.lock().unwrap().trusted.get(&fp).map(|t| t.mac.clone()).unwrap_or_default();
+    net::wake(&mac).map_err(|e| format!("{e:#}"))
+}
+
+/// Sidebar → Lock all: lock every computer this one is connected with, then this one.
+#[tauri::command]
+async fn lock_all(app: Core<'_>) -> Result<(), String> {
+    let peers: Vec<String> = app.sessions.lock().unwrap().keys().filter(|k| *k != "tablet").cloned().collect();
+    for fp in peers {
+        let _ = net::request(&app, &fp, &net::Req::Lock).await;
+    }
+    display::lock_screen();
+    Ok(())
 }
 
 /// Whether this computer stays awake (no idle lock or sleep) while `fp` controls it with Share Input.
@@ -498,8 +548,115 @@ fn autostart(handle: tauri::AppHandle, enable: Option<bool>) -> Result<bool, Str
 fn open_folder(app: Core, which: String) {
     let p = if which == "logs" { app.dir.join("logs") } else { app.inbox_dir() };
     let _ = std::fs::create_dir_all(&p);
-    let opener = if cfg!(windows) { "explorer" } else { "open" };
-    let _ = std::process::Command::new(opener).arg(p).spawn();
+    let _ = std::process::Command::new(OPENER).arg(p).spawn();
+}
+
+const OPENER: &str = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+
+/// Connections → Shared files: everything received from other computers, newest first, with small image previews.
+#[tauri::command]
+async fn shared_files(app: Core<'_>) -> Result<Vec<serde_json::Value>, String> {
+    let root = app.inbox_dir();
+    tokio::task::spawn_blocking(move || shared_list(&root)).await.map_err(|e| e.to_string())
+}
+
+fn shared_list(root: &std::path::Path) -> Vec<serde_json::Value> {
+    let mut out = vec![];
+    // Received files land in <inbox>/<sender name>-<time>/...
+    for batch in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let folder = batch.file_name().to_string_lossy().to_string();
+        let from = folder.rsplit_once('-').map_or(folder.as_str(), |(n, _)| n).to_string();
+        let mut stack = vec![batch.path()];
+        while let Some(p) = stack.pop() {
+            if p.is_dir() {
+                stack.extend(std::fs::read_dir(&p).into_iter().flatten().flatten().map(|e| e.path()));
+                continue;
+            }
+            let Ok(m) = p.metadata() else { continue };
+            let when = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+            out.push((when, p, m.len(), from.clone()));
+        }
+    }
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.into_iter()
+        .take(120)
+        .map(|(when, p, size, from)| {
+            let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+            let mime = match ext.as_str() { "png" => "image/png", "jpg" | "jpeg" => "image/jpeg", "gif" => "image/gif", "webp" => "image/webp", _ => "" };
+            // Previews only for small images; bigger ones show an icon.
+            let thumb = (!mime.is_empty() && size < 1_500_000).then(|| std::fs::read(&p).ok()).flatten().map(|b| format!("data:{mime};base64,{}", base64(&b)));
+            serde_json::json!({"name": p.file_name().map(|n| n.to_string_lossy().to_string()), "path": p, "size": size, "from": from, "when": when, "thumb": thumb})
+        })
+        .collect()
+}
+
+fn base64(b: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(b.len().div_ceil(3) * 4);
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            s.push(if i <= c.len() { T[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    s
+}
+
+/// Shared files: open one, or show it in its folder. Only files inside the received-files folder.
+#[tauri::command]
+fn open_shared(app: Core, path: String, reveal: bool) -> Result<(), String> {
+    let p = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    let root = std::fs::canonicalize(app.inbox_dir()).map_err(|e| e.to_string())?;
+    if !p.starts_with(&root) {
+        return Err("not a received file".into());
+    }
+    let mut c = std::process::Command::new(OPENER);
+    if reveal && cfg!(windows) {
+        c.arg(format!("/select,{}", p.display()));
+    } else {
+        c.arg(if reveal { p.parent().unwrap_or(&root).to_path_buf() } else { p });
+    }
+    c.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Files given with `bekdesk --send <files>` (right-click → Send with bekdesk), waiting for the user to pick computers.
+static PENDING_SEND: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+fn queue_send(args: &[String]) -> bool {
+    let Some(i) = args.iter().position(|a| a == "--send") else { return false };
+    PENDING_SEND.lock().unwrap().extend(args[i + 1..].iter().cloned());
+    true
+}
+
+#[tauri::command]
+fn take_pending_send() -> Vec<String> {
+    std::mem::take(&mut *PENDING_SEND.lock().unwrap())
+}
+
+/// Adds "Send with bekdesk" to the file manager's right-click menu (Windows: Send to; GNOME Files: Scripts).
+fn add_send_menu() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let Some(dir) = dirs::data_dir().map(|d| d.join(r"Microsoft\Windows\SendTo")) else { return };
+        let lnk = dir.join("bekdesk (send to another PC).lnk");
+        if lnk.exists() {
+            return;
+        }
+        let q = |p: &std::path::Path| p.display().to_string().replace('\'', "''");
+        let ps = format!("$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}'); $s.TargetPath='{}'; $s.Arguments='--send'; $s.IconLocation='{},0'; $s.Save()", q(&lnk), q(&exe), q(&exe));
+        let _ = std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).creation_flags(0x0800_0000).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(dir) = dirs::data_dir().map(|d| d.join("nautilus/scripts")) else { return };
+        let f = dir.join("Send with bekdesk");
+        let _ = std::fs::create_dir_all(&dir);
+        if std::fs::write(&f, format!("#!/bin/sh\nexec \"{}\" --send \"$@\"\n", exe.display())).is_ok() {
+            let _ = std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755));
+        }
+    }
 }
 
 fn show(app: &tauri::AppHandle) {
@@ -603,11 +760,18 @@ fn main() {
     // Opening bekdesk again (e.g. from the app menu on Linux, where GNOME shows no tray icon) shows the running one.
     // A test copy with its own data folder (BEKDESK_DATA) may run alongside.
     if std::env::var_os("BEKDESK_DATA").is_none() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if queue_send(&args) {
+                let _ = app.emit("send-pending", ());
+            }
+            show(app)
+        }));
     }
     builder
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--background"])))
         .setup(move |app| {
+            queue_send(&args);
+            add_send_menu();
             // Overrides let two instances run side by side on one machine for testing.
             let dir = std::env::var_os("BEKDESK_DATA").map(PathBuf::from).map_or_else(|| app.path().app_data_dir(), Ok)?;
             let port = std::env::var("BEKDESK_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(net::PORT);
@@ -682,6 +846,7 @@ fn main() {
                     }
                     // The edge drop zone window is off until it is checked on real computers (see docs/RELEASE_NOTES.md).
                     audio::sync(&c);
+                    bekdesk_core::camera::sync(&c);
                     let awake = {
                         let let_sleep = c.cfg.lock().unwrap().let_sleep.clone();
                         c.sessions.lock().unwrap().iter().any(|(fp, x)| !x.origin && x.mode == Mode::Input && !let_sleep.contains(fp))
@@ -718,7 +883,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

@@ -64,6 +64,20 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         with:
           node-version: 20
+      - uses: microsoft/setup-msbuild@v2
+        if: steps.gate.outputs.run == 'true' && matrix.name == 'Windows'
+      - name: Build the bekdesk camera (Softcam v1.8.1, MIT, pinned commit)
+        if: steps.gate.outputs.run == 'true' && matrix.name == 'Windows'
+        shell: bash
+        run: |
+          git clone --quiet https://github.com/tshino/softcam.git softcam
+          git -C softcam checkout --quiet afb424c2415b04da627fa1a7b4706575c2ba3010
+          # Shown in camera lists as "bekdesk camera".
+          sed -i 's/L"DirectShow Softcam"/L"bekdesk camera"/' softcam/src/softcam/softcam.cpp
+          # Only the camera DLL (and what it links); Softcam's own test projects need NuGet packages.
+          MSBuild.exe softcam/softcam.sln -t:softcam -p:Configuration=Release -p:Platform=x64 -m -v:minimal
+          mkdir -p src-tauri/resources
+          cp softcam/dist/bin/x64/softcam.dll src-tauri/resources/softcam.dll
       - name: Tests
         if: steps.gate.outputs.run == 'true'
         working-directory: src-tauri
