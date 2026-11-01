@@ -47,6 +47,8 @@ pub enum Req {
     Audio,
     /// The asking computer sends its sound here to play (also on this computer's speakers).
     AudioPush,
+    /// Send this computer's camera to the asking computer (only if the user shared it with that computer).
+    Camera,
     /// Lock this computer's screen ("Lock all" on a computer it's connected with).
     Lock,
     /// Send this computer's microphone to the asking computer (only if the user shared it with that computer).
@@ -291,6 +293,23 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
             };
             tokio::select! {
                 r = crate::audio::send(&mut s, mute_here) => r,
+                _ = ended => Ok(()),
+            }
+        }
+        Req::Camera => {
+            let shared = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input) && app.cfg.lock().unwrap().cam_share.contains(&fp);
+            if !shared(&app) || !app.knows(&fp) {
+                return write_msg(&mut s, &Resp::err(format!("{} hasn't shared its camera with you (tick it on {} first)", app.name(), app.name()))).await;
+            }
+            write_msg(&mut s, &Resp::ok()).await?;
+            app.log(format!("sharing the camera with {}", app.peer_name(&fp)));
+            let ended = async {
+                while shared(&app) {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            };
+            tokio::select! {
+                r = crate::camera::send(&mut s) => r,
                 _ = ended => Ok(()),
             }
         }

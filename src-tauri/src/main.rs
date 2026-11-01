@@ -167,6 +167,20 @@ async fn set_mic(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(),
     Ok(())
 }
 
+/// Camera sharing: `share` lets `fp` use this computer's camera; otherwise `fp`'s camera is used here.
+#[tauri::command]
+async fn set_cam(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(), String> {
+    let core = app.inner();
+    {
+        let mut cfg = core.cfg.lock().unwrap();
+        let set = if share { &mut cfg.cam_share } else { &mut cfg.use_cam };
+        if on { set.insert(fp) } else { set.remove(&fp) };
+    }
+    core.save();
+    bekdesk_core::camera::sync(core);
+    Ok(())
+}
+
 /// Card → Wake: switch on a sleeping paired computer over the network.
 #[tauri::command]
 fn wake(app: Core, fp: String) -> Result<(), String> {
@@ -832,6 +846,7 @@ fn main() {
                     }
                     // The edge drop zone window is off until it is checked on real computers (see docs/RELEASE_NOTES.md).
                     audio::sync(&c);
+                    bekdesk_core::camera::sync(&c);
                     let awake = {
                         let let_sleep = c.cfg.lock().unwrap().let_sleep.clone();
                         c.sessions.lock().unwrap().iter().any(|(fp, x)| !x.origin && x.mode == Mode::Input && !let_sleep.contains(fp))
@@ -868,7 +883,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_mic, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

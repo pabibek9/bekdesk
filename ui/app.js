@@ -92,6 +92,13 @@ const micToggles = (d) => {
   const theirs = canSend(d.os) ? `<label class="snd"><input type="checkbox" data-mic-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s microphone here${S.me.os === "linux" ? ` (pick "bekdesk-microphone" in your app)` : S.me.os === "windows" ? ` (pick "CABLE Output" in your app)` : ""}</label>${soundNote(st, `${esc(d.name)}'s microphone is on here.`)}` : "";
   return mine + theirs;
 };
+// Camera: the owner shares it first; then on Windows it appears as "bekdesk camera" in Zoom, Teams, browsers…
+const camToggles = (d) => {
+  const share = (S.cam_share || []).includes(d.fp), use = (S.use_cam || []).includes(d.fp), st = use && (S.camera || {})[d.fp];
+  const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's camera</label>` : "";
+  const theirs = canSend(d.os) && S.me.os === "windows" ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser)</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`)}` : "";
+  return mine + theirs;
+};
 const pushToggle = (d) => {
   if (!canSend(S.me.os)) return "";
   const on = !!(S.sound || {})[d.fp], st = on && (S.hearing || {})["push:" + d.fp];
@@ -128,6 +135,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
     sharing || controlled ? hearToggle(d, sharing) : "",
     sharing || controlled ? pushToggle(d) : "",
     sharing || controlled ? micToggles(d) : "",
+    sharing || controlled ? camToggles(d) : "",
     controlled ? awakeToggle(d) : "",
     mode !== "off" && !busy[d.fp] && !stuck ? `<div class="acts1">${reconnectBtn(d.fp)}</div>` : "",
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
@@ -379,6 +387,13 @@ $("#device-list").addEventListener("change", async (e) => {
     const fp = e.target.dataset.awake, on = e.target.checked;
     S.let_sleep = on ? (S.let_sleep || []).filter((x) => x !== fp) : [...(S.let_sleep || []), fp];
     call("set_stay_awake", { fp, on });
+    return;
+  }
+  if (e.target.dataset.camShare || e.target.dataset.camUse) {
+    const share = !!e.target.dataset.camShare, fp = e.target.dataset.camShare || e.target.dataset.camUse, on = e.target.checked;
+    const k = share ? "cam_share" : "use_cam";
+    S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
+    call("set_cam", { fp, share, on });
     return;
   }
   if (e.target.dataset.micShare || e.target.dataset.micUse) {
@@ -816,8 +831,8 @@ function renderSettings() {
   $("#lock-card").classList.toggle("hidden", S.lock_screen == null);
   if (S.lock_screen != null && !lockBusy) {
     $("#lock-text").textContent = S.lock_screen
-      ? "On. While another computer controls this one, its keyboard and mouse also work on the lock screen and on Windows admin prompts."
-      : "Off. When this PC locks, a computer controlling it can't type your password. Turn this on to fix that (Windows asks for admin permission once).";
+      ? "On. While another computer controls this one, its keyboard and mouse also work on the lock screen and on Windows admin prompts, and other computers' cameras can show up here as \"bekdesk camera\"."
+      : "Off. Turn this on so a computer controlling this one can type your password on the lock screen, and so other computers' cameras can show up here as \"bekdesk camera\" (Windows asks for admin permission once).";
     $("#lock-btn").textContent = S.lock_screen ? "Turn off" : "Turn on";
     $("#lock-btn").className = S.lock_screen ? "btn" : "btn primary";
   }

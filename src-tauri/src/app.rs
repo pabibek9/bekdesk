@@ -89,6 +89,9 @@ pub struct Config {
     /// Computers allowed to use this computer's microphone (the owner ticks it), and whose microphone is used here.
     pub mic_share: std::collections::HashSet<String>,
     pub use_mic: std::collections::HashSet<String>,
+    /// Computers allowed to use this computer's camera (the owner ticks it), and whose camera is used here.
+    pub cam_share: std::collections::HashSet<String>,
+    pub use_cam: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -221,6 +224,7 @@ impl App {
             notes: Default::default(),
             stale: Default::default(),
             locked: Default::default(),
+            battery: Default::default(),
             log: Default::default(),
             clip_last: Default::default(),
             attempts: Default::default(),
@@ -315,7 +319,7 @@ impl App {
         if always {
             self.cfg.lock().unwrap().trusted.insert(
                 fp.to_string(),
-                Trusted { name: name.into(), os: os.into(), caps: Caps::default() },
+                Trusted { name: name.into(), os: os.into(), caps: Caps::default(), mac: String::new() },
             );
             self.save();
         } else {
@@ -493,6 +497,9 @@ impl App {
             "hearing": crate::audio::status(),
             "mic_share": cfg.mic_share,
             "use_mic": cfg.use_mic,
+            "cam_share": cfg.cam_share,
+            "use_cam": cfg.use_cam,
+            "camera": crate::camera::status(),
             "pointer": cfg.pointer,
             "components": notes.get("components"),
             "log": self.log.lock().unwrap().iter().rev().take(80).cloned().collect::<Vec<_>>(),

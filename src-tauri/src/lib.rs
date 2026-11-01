@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod audio;
+pub mod camera;
 pub mod clip;
 pub mod discovery;
 pub mod display;

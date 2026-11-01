@@ -7,6 +7,11 @@
 - **Battery** level of paired laptops shows on their card, with a "low" warning.
 - Game controllers already work on a computer you show with Extend or Duplicate.
 
+### Camera (first version)
+- The camera's owner ticks **Let <name> use this PC's camera**; on a Windows PC the other computer ticks **Use <name>'s camera here**, and it appears as **bekdesk camera** in Zoom, Teams, browsers and other camera apps.
+- Sending works from Windows and from Fedora (Fedora uses GStreamer, which GNOME already includes).
+- Receiving needs the "bekdesk camera" part installed by Settings → Lock screen, camera and admin prompts → Turn on.
+
 ## bekdesk 0.1.25 — preview
 
 ### Files
