@@ -284,8 +284,9 @@ mod win {
             (0..waveOutGetNumDevs()).find(|&i| {
                 let mut caps: WAVEOUTCAPSW = std::mem::zeroed();
                 waveOutGetDevCapsW(i as usize, &mut caps, std::mem::size_of::<WAVEOUTCAPSW>() as u32) == 0 && {
-                    let n = caps.szPname.iter().position(|&c| c == 0).unwrap_or(caps.szPname.len());
-                    String::from_utf16_lossy(&caps.szPname[..n]).contains("CABLE Input")
+                    let name = caps.szPname; // copy out of the packed struct before borrowing
+                    let n = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                    String::from_utf16_lossy(&name[..n]).contains("CABLE Input")
                 }
             })
         }
