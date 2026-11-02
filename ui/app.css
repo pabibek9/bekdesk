@@ -303,7 +303,9 @@ body { animation: appIn .55s var(--spring) both; }
   background: url(art/everest.webp) center top / cover no-repeat;
   -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 92%); mask-image: linear-gradient(to bottom, #000 40%, transparent 92%); }
 .canvas { height: 470px; }
-.group, .ws-hint { z-index: 1; }
+.ws-hint { z-index: 1; }
+/* Groups make no layer of their own, so every name label can sit above every monitor. */
+.glabel { z-index: 4; }
 
 /* Connections: Pashupatinath band under the title. Settings: Boudhanath at the right of the device card. */
 .band { position: relative; height: 104px; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); margin: -6px 0 6px; background: var(--panel); overflow: hidden; }
@@ -389,3 +391,31 @@ body { animation: appIn .55s var(--spring) both; }
 .gname { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gacts { display: flex; gap: 10px; margin-top: 4px; }
 .pick { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; }
+
+/* ---- polish ---- */
+/* Manage Screens: a light rim keeps dark monitors apart where they overlap; hovering a device lifts and rings it. */
+.screen { outline: 1.5px solid color-mix(in srgb, var(--panel) 85%, transparent); }
+.group:hover { z-index: 3; }
+.group:hover .screen, .group.dragging .screen { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent), 0 8px 20px rgba(0,0,0,.2); }
+.glabel .gn { padding: 1px 9px; border-radius: 99px; background: color-mix(in srgb, var(--panel) 80%, transparent); backdrop-filter: blur(4px); }
+.glabel .gc { padding: 1px 4px; border-radius: 99px; background: color-mix(in srgb, var(--panel) 65%, transparent); }
+/* Canvas and the girl share the window height, so the whole illustration stays in view without scrolling. */
+#workspace { --foot: clamp(72px, 15vh, 150px); }
+.canvas { height: clamp(340px, calc(100vh - 196px - var(--foot)), 520px); }
+.ws-foot img { height: var(--foot); }
+.ws-foot .cute { margin-bottom: calc(var(--foot) * .2); }
+@media (max-width: 680px) { .ws-foot img { height: var(--foot); } }
+
+/* Settings: controls keep clear of the palace; it fades in behind the right side only. */
+.setdev .sbody { padding-right: 38%; }
+.setdev::after { -webkit-mask-image: linear-gradient(90deg, transparent, rgba(0,0,0,.6) 40%, #000 75%); mask-image: linear-gradient(90deg, transparent, rgba(0,0,0,.6) 40%, #000 75%); }
+@media (max-width: 760px) { .setdev .sbody { padding-right: 0; } .setdev::after { opacity: .25; } }
+
+/* Empty states: readable text, calmer spacing. */
+.empty { color: var(--ink2); background: color-mix(in srgb, var(--panel) 55%, transparent); line-height: 1.55; padding: 16px 18px; }
+#activity h2 { margin-top: 24px; }
+
+/* Sidebar version: one line for the version, one compact line for the update status. */
+.ver { display: flex; flex-direction: column; gap: 2px; }
+.ver .ver-s { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ver .ver-err { color: var(--warn); }

@@ -1,3 +1,11 @@
+## bekdesk 0.1.28 — preview
+
+### Polish
+- **Manage Screens:** monitors have a light rim so overlapping ones stay distinct; hovering or dragging a device lifts and highlights it; device names sit on a soft label above every monitor. The screens area and the kurtha girl now share the window height, so the whole illustration shows without scrolling at any normal window size.
+- **Settings:** the controls keep clear of the palace artwork, which fades in on the right only.
+- **Connections:** clearer empty-state text and calmer spacing.
+- **Sidebar:** the update status is one compact line: "Update check failed · Retry", "Check for updates", or the Update button.
+
 ## bekdesk 0.1.27 — preview
 
 Everything below from 0.1.23 to 0.1.26 in one release: lock screen, sound both ways, microphone, camera, shared files, right-click Send with bekdesk, Wake, Lock all, battery and Ctrl+Alt+Arrow switching.

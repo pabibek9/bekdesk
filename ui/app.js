@@ -976,9 +976,12 @@ $("#me").addEventListener("click", (e) => {
 // Sidebar: the version in use, and an update button when a newer one is out.
 function renderVersion() {
   const u = S.update || {};
-  setHTML($("#ver"), `bekdesk ${esc(S.version || "")}` + (u.available
-    ? ` <button class="btn primary sm" id="do-update">Update to ${esc(u.available)}</button>`
-    : ` · <button class="link" id="check-update" title="${esc(u.error || "")}">${u.error ? "Couldn't check for updates" : "Check for updates"}</button>`));
+  const status = u.available
+    ? `<button class="btn primary sm" id="do-update">Update to ${esc(u.available)}</button>`
+    : u.error
+      ? `<span class="ver-err" title="${esc(u.error)}">Update check failed</span><button class="link" id="check-update">Retry</button>`
+      : `<button class="link" id="check-update">Check for updates</button>`;
+  setHTML($("#ver"), `<span>bekdesk ${esc(S.version || "")}</span><span class="ver-s">${status}</span>`);
 }
 $("#ver").addEventListener("click", async (e) => {
   if (e.target.id === "check-update") {
