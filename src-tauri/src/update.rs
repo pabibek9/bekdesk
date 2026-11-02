@@ -43,11 +43,13 @@ fn asset_name() -> Option<&'static str> {
 
 async fn latest_release() -> Result<Value> {
     let client = reqwest::Client::builder().user_agent("bekdesk-updater").timeout(std::time::Duration::from_secs(20)).build()?;
-    let r = client.get(format!("https://api.github.com/repos/{REPO}/releases/latest")).send().await?;
+    // bekdesk publishes preview releases, which /releases/latest leaves out: take the newest published one.
+    let r = client.get(format!("https://api.github.com/repos/{REPO}/releases?per_page=10")).send().await?;
     if r.status() == reqwest::StatusCode::NOT_FOUND {
-        bail!("no public release found (releases need to be readable without signing in)");
+        bail!("no public release found");
     }
-    Ok(r.error_for_status()?.json().await?)
+    let all: Vec<Value> = r.error_for_status()?.json().await?;
+    all.into_iter().find(|r| r["draft"] != true).context("no release published yet")
 }
 
 /// Asks GitHub for the newest release; remembers and returns its version if it's newer than this one.

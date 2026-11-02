@@ -382,6 +382,17 @@ mod win {
                     r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
                 }
             }
+            if r != DISP_CHANGE_SUCCESSFUL && width > 0 {
+                // Some PCs reject size and position together (-1): set the size alone and let Windows place it.
+                dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
+                dm.dmPelsWidth = width;
+                dm.dmPelsHeight = height;
+                r = ChangeDisplaySettingsExW(n.as_ptr(), &dm, std::ptr::null_mut(), CDS_UPDATEREGISTRY | CDS_NORESET, std::ptr::null());
+            }
+            if r != DISP_CHANGE_SUCCESSFUL && width > 0 && vdd_display().as_deref() == Some(name) && vdd_rect().is_some() {
+                // Windows switched the virtual screen on itself (extend mode) at a size it chose: use that.
+                return Ok(());
+            }
             if r != DISP_CHANGE_SUCCESSFUL {
                 bail!("Windows couldn't switch the extra screen on at {width}x{height} (error {r}). Press Reconnect; if it repeats, restart this PC once");
             }

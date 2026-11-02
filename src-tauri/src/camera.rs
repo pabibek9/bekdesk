@@ -183,11 +183,11 @@ mod win {
                         bail!("another app is already using the bekdesk camera");
                     }
                 }
-                // RGB top-down → BGR bottom-up (the DIB layout DirectShow's RGB24 uses).
+                // RGB → BGR, rows kept top-down (Softcam flips for DirectShow itself).
                 bgr.resize((w * h * 3) as usize, 0);
                 for y in 0..h {
                     let src = &rgb[(y * fw * 3) as usize..][..(w * 3) as usize];
-                    let dst = &mut bgr[((h - 1 - y) * w * 3) as usize..][..(w * 3) as usize];
+                    let dst = &mut bgr[(y * w * 3) as usize..][..(w * 3) as usize];
                     for (d, s) in dst.chunks_exact_mut(3).zip(src.chunks_exact(3)) {
                         d.copy_from_slice(&[s[2], s[1], s[0]]);
                     }

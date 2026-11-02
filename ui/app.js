@@ -753,8 +753,9 @@ async function renderGallery() {
   let items = [];
   try { items = await invoke("shared_files"); } catch (_) {}
   const icon = `<svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>`;
+  const folder = `<svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>`;
   setHTML($("#gallery"), items.map((f, i) => `<div class="gitem" data-i="${i}">
-      <div class="gthumb">${f.thumb ? `<img src="${f.thumb}" alt="" loading="lazy" />` : icon}</div>
+      <div class="gthumb">${f.thumb ? `<img src="${f.thumb}" alt="" loading="lazy" />` : f.folder ? folder : icon}</div>
       <div class="gname" title="${esc(f.name)}">${esc(f.name)}</div>
       <div class="small">from ${esc(f.from)} · ${fmtBytes(f.size)}</div>
       <div class="gacts"><button class="link" data-g="open">Open</button><button class="link" data-g="reveal">Show</button><button class="link" data-g="send">Send on</button></div>
@@ -794,6 +795,18 @@ async function checkPendingSend() {
   try { const p = await invoke("take_pending_send"); if (p.length) pickTargets(p); } catch (_) {}
 }
 listen("send-pending", checkPendingSend);
+
+// Copied files arrive in the background; say so when they're ready to paste (big ones take a while).
+const pasteSeen = new Set();
+function noticeArrivals() {
+  for (const t of S.transfers || []) {
+    if (!t.outgoing && t.state.startsWith("received · ready") && !pasteSeen.has(t.id)) {
+      pasteSeen.add(t.id);
+      if (Date.now() - startedAt > 5000) toast(`${t.label} from ${t.peer} is here. Paste it now.`);
+    }
+  }
+}
+const startedAt = Date.now();
 
 function renderActivity() {
   renderGallery();
@@ -1019,6 +1032,7 @@ function render() {
   if (v === "activity") renderActivity();
   if (v === "settings") renderSettings();
   renderModal();
+  noticeArrivals();
   if (!welcomed) welcomed = true, showWelcome();
   renderGetReady();
 }

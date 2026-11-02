@@ -566,15 +566,12 @@ fn shared_list(root: &std::path::Path) -> Vec<serde_json::Value> {
     for batch in std::fs::read_dir(root).into_iter().flatten().flatten() {
         let folder = batch.file_name().to_string_lossy().to_string();
         let from = folder.rsplit_once('-').map_or(folder.as_str(), |(n, _)| n).to_string();
-        let mut stack = vec![batch.path()];
-        while let Some(p) = stack.pop() {
-            if p.is_dir() {
-                stack.extend(std::fs::read_dir(&p).into_iter().flatten().flatten().map(|e| e.path()));
-                continue;
-            }
+        // Each top-level entry is one thing that was sent: a file, or a whole folder shown as one item.
+        for p in std::fs::read_dir(batch.path()).into_iter().flatten().flatten().map(|e| e.path()) {
             let Ok(m) = p.metadata() else { continue };
             let when = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
-            out.push((when, p, m.len(), from.clone()));
+            let size = if m.is_dir() { dir_size(&p) } else { m.len() };
+            out.push((when, p, size, from.clone()));
         }
     }
     out.sort_by(|a, b| b.0.cmp(&a.0));
@@ -585,9 +582,13 @@ fn shared_list(root: &std::path::Path) -> Vec<serde_json::Value> {
             let mime = match ext.as_str() { "png" => "image/png", "jpg" | "jpeg" => "image/jpeg", "gif" => "image/gif", "webp" => "image/webp", _ => "" };
             // Previews only for small images; bigger ones show an icon.
             let thumb = (!mime.is_empty() && size < 1_500_000).then(|| std::fs::read(&p).ok()).flatten().map(|b| format!("data:{mime};base64,{}", base64(&b)));
-            serde_json::json!({"name": p.file_name().map(|n| n.to_string_lossy().to_string()), "path": p, "size": size, "from": from, "when": when, "thumb": thumb})
+            serde_json::json!({"name": p.file_name().map(|n| n.to_string_lossy().to_string()), "path": p, "size": size, "from": from, "when": when, "thumb": thumb, "folder": p.is_dir()})
         })
         .collect()
+}
+
+fn dir_size(p: &std::path::Path) -> u64 {
+    std::fs::read_dir(p).into_iter().flatten().flatten().map(|e| e.path()).map(|q| if q.is_dir() { dir_size(&q) } else { q.metadata().map_or(0, |m| m.len()) }).sum()
 }
 
 fn base64(b: &[u8]) -> String {

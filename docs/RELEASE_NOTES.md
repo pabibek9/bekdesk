@@ -1,3 +1,13 @@
+## bekdesk 0.1.29 — preview
+
+### Fixes
+- **Scrolling on the controlled computer is the right way round again.** bekdesk now only changes Deskflow's scroll settings when you change them in Settings.
+- **Camera picture is upright** (it was upside down).
+- **Check for updates works** (it skipped bekdesk's preview releases).
+- **Shared files:** a copied folder shows as one folder, with its total size.
+- **File transfers:** a failed transfer now says why; copied files that finish arriving say "ready to paste".
+- **Extend:** more ways to switch the extra screen on when Windows refuses (error -1), including accepting the size Windows picks.
+
 ## bekdesk 0.1.28 — preview
 
 ### Polish

@@ -641,7 +641,11 @@ pub async fn send_files(app: &App, fp: &str, paths: Vec<PathBuf>, paste: bool) -
         Ok(())
     }
     .await;
-    app.transfer_update(id, if res.is_ok() { total } else { 0 }, Some(if res.is_ok() { "sent" } else { "failed" }));
+    let state = match &res {
+        Ok(()) => "sent".to_string(),
+        Err(e) => format!("failed: {e:#}"),
+    };
+    app.transfer_update(id, if res.is_ok() { total } else { 0 }, Some(&state));
     res
 }
 
@@ -689,7 +693,12 @@ async fn receive_files<S: AsyncRead + AsyncWrite + AsyncBufReadExt + Unpin>(app:
         Ok(())
     }
     .await;
-    app.transfer_update(id, if res.is_ok() { total } else { 0 }, Some(if res.is_ok() { "received" } else { "failed" }));
+    let state = match &res {
+        Ok(()) if paste => "received · ready to paste".to_string(),
+        Ok(()) => "received".to_string(),
+        Err(e) => format!("failed: {e:#}"),
+    };
+    app.transfer_update(id, if res.is_ok() { total } else { 0 }, Some(&state));
     res?;
     write_msg(s, &Resp::ok()).await?;
     app.log(format!("received {} item(s) into {}", items.len(), base.display()));

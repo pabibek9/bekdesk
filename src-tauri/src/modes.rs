@@ -189,11 +189,19 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                 let c = app.cfg.lock().unwrap();
                 (if c.scroll_speed > 0.0 { c.scroll_speed.clamp(0.1, 10.0) } else { 1.0 }, c.invert_scroll)
             };
+            // Only when changed in Settings: writing Deskflow's defaults explicitly reversed scrolling on some PCs.
+            let mut scroll = String::new();
+            if (speed - 1.0).abs() > 0.01 {
+                scroll += &format!("yScrollScale={speed}\nxScrollScale={speed}\n");
+            }
+            if invert {
+                scroll += "invertYScroll=true\ninvertXScroll=true\n";
+            }
             std::fs::create_dir_all(ini.parent().unwrap())?;
             std::fs::write(
                 &ini,
                 format!(
-                    "[core]\ncoreMode=1\ncomputerName={}\nport={lport}\npreventSleep=false\n\n[client]\nremoteHost=127.0.0.1\nyScrollScale={speed}\nxScrollScale={speed}\ninvertYScroll={invert}\ninvertXScroll={invert}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
+                    "[core]\ncoreMode=1\ncomputerName={}\nport={lport}\npreventSleep=false\n\n[client]\nremoteHost=127.0.0.1\n{scroll}\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
                     App::screen_name(&app.id.fp)
                 ),
             )?;
