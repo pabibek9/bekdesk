@@ -1,3 +1,12 @@
+## bekdesk 0.1.31 — preview
+
+### Fixes
+- **Blank page after pressing Lock all, Light/Dark mode or Quit:** those sidebar buttons were treated as page buttons and hid every page. Only the four page buttons switch pages now.
+- **Two mode buttons looking selected at once:** the button you last pressed kept a blue ring that looked like the selected mode. It is now a thin dashed grey ring; only the active mode is blue.
+- **Duplicate / Extend: "Failed to connect to …:48050"** on the computer that should show the screen. Two causes are handled:
+  - The viewer was started before screen sharing on the other computer was ready. bekdesk now waits until it answers.
+  - Windows Firewall on the computer sharing its screen blocked it. The first time you pick Duplicate or Extend, Windows asks for admin permission once so bekdesk can allow its screen sharing through the firewall (it still only works for paired devices). If it's still unreachable, the card says so instead of a viewer error window.
+
 ## bekdesk 0.1.30 — preview
 
 Update every computer: the sound changes need 0.1.30 on both ends.

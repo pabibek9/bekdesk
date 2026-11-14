@@ -248,6 +248,10 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
             s.tasks.push(tokio::spawn(async move {
                 let pair = async {
                     let home = moonlight_home(&app2, &exe);
+                    let name = app2.peer_name(&fp2);
+                    if !listening(std::net::SocketAddr::new(ip, port), 20).await {
+                        bail!("can't reach {name}'s screen sharing. On {name}, press Reconnect and choose Yes when Windows asks to let bekdesk through the firewall");
+                    }
                     if !moonlight_paired(&exe, &home, &host).await {
                         // The pair window stays open after success, so watch for pairing and close it ourselves.
                         let mut c = spawn_in(&app2, &exe, &["pair".into(), host.clone(), "--pin".into(), pin], "moonlight-pair.log", &home)?;
@@ -450,8 +454,27 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
 
 type Respawn = (PathBuf, Vec<String>, String);
 
+/// Whether something accepts connections at `addr` within about `secs` seconds.
+async fn listening(addr: std::net::SocketAddr, secs: u32) -> bool {
+    for _ in 0..secs * 2 {
+        if matches!(tokio::time::timeout(Duration::from_secs(1), tokio::net::TcpStream::connect(addr)).await, Ok(Ok(_))) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
 async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, receiver: &str, listen_only: bool) -> Result<(tokio::process::Child, Respawn, (String, String))> {
     let exe = ensure(app, "sunshine", key).await?;
+    // Windows Firewall blocks other computers from seeing this screen until it's allowed: ask once (admin prompt).
+    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !crate::service::firewall_allowed(&exe) && !ASKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        let args = vec!["--firewall".to_string(), exe.display().to_string()];
+        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || crate::service::elevated(&args)).await {
+            app.log(format!("firewall: {e:#}"));
+        }
+    }
     let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
     std::fs::create_dir_all(&dir)?;
     let creds_file = dir.join("bekdesk-creds.txt");
@@ -531,6 +554,10 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         }
         // Sunshine knows the screen now; hide it until a device actually connects (prep-cmd brings it back).
         detach_virtual();
+    }
+    // The other computer connects as soon as it's told to: wait until screen sharing actually answers here.
+    if !listening((std::net::Ipv4Addr::LOCALHOST, port).into(), 30).await {
+        app.log(format!("screen sharing for {receiver} isn't answering on port {port} yet"));
     }
     Ok((child, (exe, args, log), creds))
 }

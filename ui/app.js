@@ -45,9 +45,10 @@ function moveInd() {
   if (b && ind) { ind.style.top = b.offsetTop + "px"; ind.style.height = b.offsetHeight + "px"; }
 }
 requestAnimationFrame(moveInd);
-document.querySelectorAll(".nav button").forEach((b) =>
+// Only the page buttons switch pages: Lock all, the theme switch and Quit also sit in the sidebar.
+document.querySelectorAll(".nav button[data-view]").forEach((b) =>
   b.addEventListener("click", () => {
-    document.querySelectorAll(".nav button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".nav button[data-view]").forEach((x) => x.classList.toggle("on", x === b));
     moveInd();
     document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.view));
     render();

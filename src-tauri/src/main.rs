@@ -773,6 +773,12 @@ fn main() {
         let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    // Elevated (one UAC prompt): `--firewall <screen-sharing exe>`.
+    if args.get(1).map(String::as_str) == Some("--firewall") && args.len() == 3 {
+        let r = bekdesk_core::service::allow_through_firewall(std::path::Path::new(&args[2]));
+        let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
+        std::process::exit(if r.is_ok() { 0 } else { 1 });
+    }
     if args.get(1).map(String::as_str) == Some("--uninstall-service") {
         let r = bekdesk_core::service::uninstall();
         let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());

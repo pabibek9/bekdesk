@@ -295,6 +295,8 @@ body { animation: appIn .55s var(--spring) both; }
 .dev.live .ico { background: #1d2230; }
 .seg button { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--panel); }
 .seg button .mi { grid-row: 1 / span 2; width: 18px; height: 18px; stroke: var(--ink2); fill: none; stroke-width: 1.7; }
+/* Keyboard focus must not look like the selected mode (two "glowing" buttons): thin dashed grey ring instead. */
+.seg button:focus-visible { outline: 1px dashed var(--ink3); outline-offset: 2px; }
 .seg button.on .mi { stroke: var(--accent); }
 .seg button.on b { color: var(--accent); }
 
