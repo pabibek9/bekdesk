@@ -1,5 +1,6 @@
 //! Use another computer's camera here: the owner shares it, and on Windows it shows up in Zoom, Teams, browsers and
-//! other camera apps as "bekdesk camera" (the bundled Softcam DirectShow filter, registered by the admin setup).
+//! other camera apps as "bekdesk camera" (the bundled Softcam DirectShow filter, registered by the admin setup);
+//! on Linux as "bekdesk-camera" (the v4l2loopback kernel module, which the user installs).
 //! Frames travel as JPEG, each prefixed with its length (u32, little-endian), over the bekdesk TLS channel.
 
 use crate::app::{App, Mode};
@@ -128,9 +129,54 @@ pub async fn play<R: AsyncRead + Unpin>(input: &mut R) -> Result<()> {
     }
     #[cfg(not(windows))]
     {
-        let _ = input;
-        bail!("using another computer's camera works on Windows so far")
+        let dev = virtual_camera()?;
+        // GStreamer decodes the JPEGs into the virtual camera, which camera apps then open like a real one.
+        let mut gst = tokio::process::Command::new("gst-launch-1.0")
+            .args(["-q", "fdsrc", "!", "image/jpeg,framerate=30/1", "!", "jpegdec", "!", "videoconvert", "!", "video/x-raw,format=YUY2", "!", "v4l2sink", &format!("device={dev}"), "sync=false"])
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .context("couldn't start the camera (GStreamer's gst-launch-1.0 is needed)")?;
+        let mut pipe = gst.stdin.take().context("no camera input")?;
+        loop {
+            let len = input.read_u32_le().await?;
+            if len > MAX_FRAME {
+                bail!("bad camera frame");
+            }
+            let mut jpeg = vec![0u8; len as usize];
+            input.read_exact(&mut jpeg).await?;
+            pipe.write_all(&jpeg).await.context("the bekdesk camera stopped")?;
+        }
     }
+}
+
+/// The "bekdesk camera" device among the names under `/sys/devices/virtual/video4linux/<videoN>/name`.
+#[cfg_attr(windows, allow(dead_code))]
+fn pick_camera(named: &[(String, String)]) -> Option<String> {
+    named.iter().find(|(_, name)| name.trim().starts_with("bekdesk")).map(|(dev, _)| format!("/dev/{dev}"))
+}
+
+/// Linux: the virtual camera (the v4l2loopback kernel module), switched on the first time through the system's
+/// own password prompt.
+#[cfg(not(windows))]
+fn virtual_camera() -> Result<String> {
+    if !cfg!(target_os = "linux") {
+        bail!("using another computer's camera on a Mac isn't available yet");
+    }
+    let find = || {
+        let named: Vec<(String, String)> = std::fs::read_dir("/sys/devices/virtual/video4linux").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_string_lossy().into_owned(), std::fs::read_to_string(e.path().join("name")).ok()?))).collect();
+        pick_camera(&named)
+    };
+    if let Some(dev) = find() {
+        return Ok(dev);
+    }
+    // Ask once per run: a declined password prompt shouldn't come back every time the stream retries.
+    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !ASKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        let _ = std::process::Command::new("pkexec").args(["modprobe", "v4l2loopback", "video_nr=42", "card_label=bekdesk-camera", "exclusive_caps=1"]).status();
+    }
+    find().context("the virtual camera isn't installed. Install v4l2loopback (Kali/Ubuntu/Debian: sudo apt install v4l2loopback-dkms; Fedora: akmod-v4l2loopback from RPM Fusion), restart bekdesk, and allow the password prompt")
 }
 
 #[cfg(windows)]
@@ -250,6 +296,13 @@ pub fn sync(app: &Arc<App>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn finds_the_bekdesk_camera() {
+        let named = [("video0".to_string(), "Integrated Camera\n".to_string()), ("video42".to_string(), "bekdesk-camera\n".to_string())];
+        assert_eq!(super::pick_camera(&named).as_deref(), Some("/dev/video42"));
+        assert_eq!(super::pick_camera(&named[..1]), None);
+    }
+
     #[test]
     fn splits_back_to_back_jpegs() {
         let buf = [0x00, 0xFF, 0xD8, 1, 2, 0xFF, 0xD9, 0xFF, 0xD8, 3];

@@ -79,11 +79,11 @@ const speedSlider = (key, name) => {
 // Ticking "play this PC's sound" on several computers plays it on all their speakers at once.
 const canSend = (os) => os === "linux" || os === "windows";
 const soundNote = (st, ok) => st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? ok : `No sound yet: ${esc(st)}`}</div>` : "";
-const hearToggle = (d, controlling) => {
+const hearToggle = (d) => {
   if (!canSend(d.os)) return "";
-  const on = (S.hear || []).includes(d.fp), st = on && (S.hearing || {})["pull:" + d.fp];
-  const muted = controlling && d.os === "linux" ? ` (muted on ${esc(d.name)})` : "";
-  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC${muted}</label>${soundNote(st, `Playing ${esc(d.name)}'s sound here.`)}`;
+  const on = S.hub || (S.hear || []).includes(d.fp), st = on && (S.hearing || {})["pull:" + d.fp];
+  const muted = (S.hear_both || []).includes(d.fp) ? "" : ` (${esc(d.name)} goes quiet)`;
+  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""} ${S.hub ? "disabled" : ""}/> Play ${esc(d.name)}'s sound on this PC${muted}${S.hub ? " (on for every computer in Settings)" : ""}</label>${on ? `<label class="snd sub"><input type="checkbox" data-hear-both="${esc(d.fp)}" ${(S.hear_both || []).includes(d.fp) ? "checked" : ""}/> Keep it playing on ${esc(d.name)}'s speakers too</label>` : ""}${soundNote(st, `Playing ${esc(d.name)}'s sound here.`)}`;
 };
 // Microphone: the owner shares it first; then the other computer can use it as a microphone here.
 const micToggles = (d) => {
@@ -96,7 +96,7 @@ const micToggles = (d) => {
 const camToggles = (d) => {
   const share = (S.cam_share || []).includes(d.fp), use = (S.use_cam || []).includes(d.fp), st = use && (S.camera || {})[d.fp];
   const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's camera</label>` : "";
-  const theirs = canSend(d.os) && S.me.os === "windows" ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser)</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`)}` : "";
+  const theirs = canSend(d.os) && canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser${S.me.os === "linux" ? "; asks for your password once" : ""})</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`)}` : "";
   return mine + theirs;
 };
 const pushToggle = (d) => {
@@ -132,7 +132,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const more = [
     mode === "extend" || mode === "input" ? speedSlider(d.fp, d.name) : "",
     mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "",
-    sharing || controlled ? hearToggle(d, sharing) : "",
+    sharing || controlled ? hearToggle(d) : "",
     sharing || controlled ? pushToggle(d) : "",
     sharing || controlled ? micToggles(d) : "",
     sharing || controlled ? camToggles(d) : "",
@@ -401,6 +401,12 @@ $("#device-list").addEventListener("change", async (e) => {
     const k = share ? "mic_share" : "use_mic";
     S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
     call("set_mic", { fp, share, on });
+    return;
+  }
+  if (e.target.dataset.hearBoth) {
+    const fp = e.target.dataset.hearBoth, on = e.target.checked;
+    S.hear_both = on ? [...(S.hear_both || []), fp] : (S.hear_both || []).filter((x) => x !== fp);
+    call("set_hear_both", { fp, on });
     return;
   }
   if (e.target.dataset.sound) {
@@ -840,6 +846,7 @@ function renderSettings() {
   if (document.activeElement !== $("#scroll-speed")) $("#scroll-speed").value = sc.speed;
   $("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×";
   $("#scroll-invert").checked = sc.invert;
+  $("#hub").checked = !!S.hub;
   // Windows only: the lock screen helper.
   $("#lock-card").classList.toggle("hidden", S.lock_screen == null);
   if (S.lock_screen != null && !lockBusy) {
@@ -935,6 +942,10 @@ $("#scroll-speed").addEventListener("input", () => ($("#scroll-val").textContent
 $("#scroll-speed").addEventListener("change", saveScroll);
 $("#scroll-invert").addEventListener("change", saveScroll);
 $("#autostart").addEventListener("change", (e) => call("autostart", { enable: e.target.checked }));
+$("#hub").addEventListener("change", (e) => call("set_hub", { on: e.target.checked }).then(refresh));
+// Linux (GNOME): the system's own "Automatic Screen Lock" switch, for a computer used only from another keyboard.
+const showAutoLock = (locks) => { $("#nolock-row").classList.toggle("hidden", locks == null); $("#nolock").checked = locks === false; };
+$("#nolock").addEventListener("change", (e) => invoke("auto_lock", { set: !e.target.checked }).then(showAutoLock).catch((err) => { toast(`${err}`); e.target.checked = !e.target.checked; }));
 // Only links that are filled in are shown.
 const LINKS = { GitHub: "https://github.com/pabibek9/bekdesk", LinkedIn: "", Instagram: "", "Join the developer team": "" };
 $("#links").addEventListener("click", (e) => { const b = e.target.closest("[data-url]"); if (b) invoke("open_url", { url: b.dataset.url }); });
@@ -1042,6 +1053,7 @@ async function refresh() {
   try { S = await invoke("snapshot"); render(); } catch (e) { console.error(e); }
 }
 invoke("autostart", {}).then((on) => ($("#autostart").checked = on)).catch(() => {});
+invoke("auto_lock", {}).then(showAutoLock).catch(() => {});
 refresh();
 setInterval(refresh, 1000);
 window.addEventListener("resize", () => { render(); moveInd(); });

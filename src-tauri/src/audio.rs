@@ -33,6 +33,12 @@ fn ids(short: &str) -> Vec<&str> {
     short.lines().filter_map(|l| l.split_whitespace().next()).filter(|id| id.chars().all(|c| c.is_ascii_digit())).collect()
 }
 
+/// Ids of bekdesk's own sound outputs in `pactl list short modules` output.
+#[cfg_attr(windows, allow(dead_code))]
+fn stale_modules(short: &str) -> Vec<&str> {
+    short.lines().filter(|l| l.contains(&format!("sink_name={SINK}"))).filter_map(|l| ids(l).first().copied()).collect()
+}
+
 /// Puts sound back on the speakers when streaming ends, however it ends.
 struct Restore {
     default: String,
@@ -68,8 +74,7 @@ pub async fn send<W: AsyncWrite + Unpin>(out: &mut W, mute_here: bool) -> Result
     can_send()?;
     #[cfg(windows)]
     {
-        let _ = mute_here; // Windows can't silence its speakers without a virtual sound device
-        return win_capture::send(out, true).await;
+        return win_capture::send(out, true, mute_here).await;
     }
     #[cfg(not(windows))]
     if !mute_here {
@@ -85,8 +90,12 @@ pub async fn send<W: AsyncWrite + Unpin>(out: &mut W, mute_here: bool) -> Result
         tokio::io::copy(&mut pcm, out).await?;
         return Ok(());
     }
+    // A bekdesk output left behind by a crash would keep the sound stuck on it: remove it first.
+    #[cfg(not(windows))]
+    for id in stale_modules(&pactl(&["list", "short", "modules"]).unwrap_or_default()) {
+        pactl(&["unload-module", id]);
+    }
     let default = pactl(&["get-default-sink"]).context("no sound output here")?;
-    // shortcut: a bekdesk output left behind by a crash makes this fail until it's removed or the PC restarts.
     let module = pactl(&["load-module", "module-null-sink", &format!("sink_name={SINK}"), "sink_properties=device.description=bekdesk"]).context("couldn't create bekdesk's sound output")?;
     let _restore = Restore { default, module };
     pactl(&["set-default-sink", SINK]);
@@ -114,6 +123,13 @@ pub fn status() -> BTreeMap<String, String> {
     STATUS.lock().unwrap().clone()
 }
 
+/// Stop one stream ("pull:<fp>", …) so `sync` starts it again with the current settings.
+pub fn restart(key: &str) {
+    if let Some(t) = PLAYERS.lock().unwrap().remove(key) {
+        t.abort();
+    }
+}
+
 /// Keeps the sound streams the user picked running, for every computer connected with Share Input (either way):
 /// "pull" plays that computer's sound here (`hear`), "push" plays this computer's sound there (`sound`).
 /// Ticking "push" on several computers plays this PC's sound on all their speakers.
@@ -125,7 +141,7 @@ pub fn sync(app: &Arc<App>) {
         linked
             .iter()
             .flat_map(|fp| {
-                let pull = cfg.hear.contains(fp).then(|| format!("pull:{fp}"));
+                let pull = (cfg.hub || cfg.hear.contains(fp)).then(|| format!("pull:{fp}"));
                 let push = (cfg.sound.get(fp) == Some(&true) && can_send().is_ok()).then(|| format!("push:{fp}"));
                 let mic = cfg.use_mic.contains(fp).then(|| format!("mic:{fp}"));
                 pull.into_iter().chain(push).chain(mic)
@@ -160,7 +176,8 @@ pub fn sync(app: &Arc<App>) {
                         STATUS.lock().unwrap().insert(fp.clone(), "playing".into());
                         send(&mut s, false).await
                     } else {
-                        let (mut s, _) = crate::net::request(&app, &key, &Req::Audio).await?;
+                        let mute = Some(!app.cfg.lock().unwrap().hear_both.contains(&key));
+                        let (mut s, _) = crate::net::request(&app, &key, &Req::Audio { mute }).await?;
                         STATUS.lock().unwrap().insert(fp.clone(), "playing".into());
                         play(&mut s).await
                     }
@@ -179,7 +196,7 @@ pub fn sync(app: &Arc<App>) {
 /// Stream this computer's default microphone into `out` (only for computers the user chose to share it with).
 pub async fn send_mic<W: AsyncWrite + Unpin>(out: &mut W) -> Result<()> {
     #[cfg(windows)]
-    return win_capture::send(out, false).await;
+    return win_capture::send(out, false, false).await;
     #[cfg(not(windows))]
     {
         if !cfg!(target_os = "linux") {
@@ -348,6 +365,8 @@ mod tests {
         let out = "71\t56\t70\tPipeWire\ts16le 2ch 48000Hz\n93\t56\t92\tPipeWire\tfloat32le 2ch 48000Hz\n";
         assert_eq!(super::ids(out), ["71", "93"]);
         assert!(super::ids("").is_empty());
+        let modules = "22\tmodule-always-sink\t\n536870913\tmodule-null-sink\tsink_name=bekdesk_remote sink_properties=device.description=bekdesk\n40\tmodule-null-sink\tsink_name=other\n";
+        assert_eq!(super::stale_modules(modules), ["536870913"]);
         assert!(super::ids("Failure: No such entity").is_empty());
     }
 
@@ -366,8 +385,32 @@ mod win_capture {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-    /// `loopback`: what the speakers play; otherwise the default microphone.
-    pub async fn send<W: AsyncWrite + Unpin>(out: &mut W, loopback: bool) -> Result<()> {
+    /// The speakers, muted until dropped (unless the user had already muted them).
+    struct Muted(windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume);
+    impl Muted {
+        fn new() -> Result<Option<Self>> {
+            use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+            use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+            unsafe {
+                let devices: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+                let vol: windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume = devices.GetDefaultAudioEndpoint(eRender, eConsole)?.Activate(CLSCTX_ALL, None)?;
+                if vol.GetMute()?.as_bool() {
+                    return Ok(None);
+                }
+                vol.SetMute(true, std::ptr::null())?;
+                Ok(Some(Self(vol)))
+            }
+        }
+    }
+    impl Drop for Muted {
+        fn drop(&mut self) {
+            let _ = unsafe { self.0.SetMute(false, std::ptr::null()) };
+        }
+    }
+
+    /// `loopback`: what the speakers play; otherwise the default microphone. `mute`: silence the speakers meanwhile
+    /// (the recording is taken before the speakers' own volume and mute, so it keeps its sound).
+    pub async fn send<W: AsyncWrite + Unpin>(out: &mut W, loopback: bool, mute: bool) -> Result<()> {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();
         // cpal streams can't move between threads; this one lives until the receiving side goes away.
@@ -403,6 +446,7 @@ mod win_capture {
             match r {
                 Ok(stream) => {
                     let _ = ready_tx.send(Ok(()));
+                    let _muted = if mute { Muted::new().unwrap_or_else(|e| { eprintln!("mute speakers: {e}"); None }) } else { None };
                     while !tx.is_closed() {
                         std::thread::sleep(std::time::Duration::from_millis(200));
                     }

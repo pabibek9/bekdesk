@@ -621,6 +621,22 @@ pub fn is_locked() -> bool {
     false
 }
 
+/// Whether this computer locks its screen by itself when left alone (GNOME only; None where bekdesk can't tell).
+pub fn auto_lock() -> Option<bool> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let o = std::process::Command::new("gsettings").args(["get", "org.gnome.desktop.screensaver", "lock-enabled"]).output().ok()?;
+    o.status.success().then(|| String::from_utf8_lossy(&o.stdout).trim() == "true")
+}
+
+/// The user's own choice in Settings, for a computer without its own keyboard: GNOME's "Automatic Screen Lock".
+pub fn set_auto_lock(on: bool) -> anyhow::Result<()> {
+    let ok = std::process::Command::new("gsettings").args(["set", "org.gnome.desktop.screensaver", "lock-enabled", if on { "true" } else { "false" }]).status().is_ok_and(|s| s.success());
+    anyhow::ensure!(ok, "this desktop's lock setting can't be changed from bekdesk; change it in the system settings");
+    Ok(())
+}
+
 /// While another computer controls this one, keep it from blanking the screen, locking from idle or sleeping
 /// (its user is working on it from the other keyboard). Locking by hand still works. Call every few seconds.
 pub fn keep_awake(on: bool) {

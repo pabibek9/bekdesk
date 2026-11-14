@@ -1,3 +1,22 @@
+## bekdesk 0.1.30 — preview
+
+Update every computer: the sound changes need 0.1.30 on both ends.
+
+### Fixes
+- **"Wake" on a computer that is already awake, or a computer that never comes back:** bekdesk now remembers where each paired computer last answered and tries it there every few seconds, and notices when that computer contacts it. A computer that woke up, or that network discovery lost, shows as connected again by itself within about ten seconds, and your saved mode restarts. This is also why Share Input sometimes couldn't be picked until you typed the address by hand.
+- **A working connection is no longer cut** when network discovery briefly loses a computer that is still answering (common on Wi-Fi).
+- **Sound stuck after a crash (Linux):** a leftover bekdesk sound output is removed before a new one is made.
+
+### Sound: one place for everything
+- **Settings → This is my main device:** every computer you connect with Share Input plays its sound on this one (its speakers, or the Bluetooth headphones connected to it), without ticking a box per computer. A computer with no speakers of its own works too.
+- **The other computer goes quiet** while its sound plays here, on Windows as well as Linux. Tick **Keep it playing on <name>'s speakers too** under **More** if you want both.
+
+### Camera
+- **A Linux computer can now use another computer's camera** (before, only Windows could). It needs the v4l2loopback virtual camera installed once (Kali/Ubuntu/Debian: `sudo apt install v4l2loopback-dkms`; Fedora: `akmod-v4l2loopback` from RPM Fusion). bekdesk switches it on through the system's password prompt, and it appears as **bekdesk-camera** in Zoom and browsers.
+
+### A computer without its own keyboard (Fedora)
+- **Settings → This computer has no keyboard of its own: don't lock its screen automatically** switches off GNOME's Automatic Screen Lock, so the screen never ends up on a lock screen that another computer's keyboard can't type on. To also skip signing in after a restart, turn on Automatic Login in Fedora's Settings → Users. bekdesk still never types a password or unlocks anything itself.
+
 ## bekdesk 0.1.29 — preview
 
 ### Fixes

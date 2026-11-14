@@ -50,6 +50,9 @@ pub struct Trusted {
     /// Its network card address, for Wake.
     #[serde(default)]
     pub mac: String,
+    /// Where it last answered ("ip:port"), to reconnect when network discovery doesn't find it.
+    #[serde(default)]
+    pub addr: String,
 }
 
 /// Position of a device in the Workspace view, in workspace units (1 unit = 10 physical px).
@@ -92,6 +95,10 @@ pub struct Config {
     /// Computers allowed to use this computer's camera (the owner ticks it), and whose camera is used here.
     pub cam_share: std::collections::HashSet<String>,
     pub use_cam: std::collections::HashSet<String>,
+    /// This is the user's main device: every computer connected with Share Input plays its sound here.
+    pub hub: bool,
+    /// Computers that keep playing on their own speakers too while their sound plays here (default: they go quiet).
+    pub hear_both: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -319,7 +326,7 @@ impl App {
         if always {
             self.cfg.lock().unwrap().trusted.insert(
                 fp.to_string(),
-                Trusted { name: name.into(), os: os.into(), caps: Caps::default(), mac: String::new() },
+                Trusted { name: name.into(), os: os.into(), caps: Caps::default(), mac: String::new(), addr: String::new() },
             );
             self.save();
         } else {
@@ -406,13 +413,20 @@ impl App {
             None => b.remove(fp),
         };
         drop(b);
-        if !h.mac.is_empty() {
-            let mut cfg = self.cfg.lock().unwrap();
-            let changed = cfg.trusted.get_mut(fp).is_some_and(|t| t.mac != h.mac && { t.mac = h.mac.clone(); true });
-            drop(cfg);
-            if changed {
-                self.save();
+        let addr = self.peer(fp).and_then(|p| p.addrs.first().map(|ip| std::net::SocketAddr::new(*ip, p.port).to_string())).unwrap_or_default();
+        let mut cfg = self.cfg.lock().unwrap();
+        let mut changed = false;
+        if let Some(t) = cfg.trusted.get_mut(fp) {
+            if !h.mac.is_empty() && t.mac != h.mac {
+                (t.mac, changed) = (h.mac.clone(), true);
             }
+            if !addr.is_empty() && t.addr != addr {
+                (t.addr, changed) = (addr, true);
+            }
+        }
+        drop(cfg);
+        if changed {
+            self.save();
         }
     }
 
@@ -492,6 +506,8 @@ impl App {
                 "devices": crate::modes::moonlight_devices(self, "tablet").into_iter().map(|(uuid, name)| json!({"uuid": uuid, "name": name})).collect::<Vec<_>>()},
             "sound": cfg.sound,
             "hear": cfg.hear,
+            "hub": cfg.hub,
+            "hear_both": cfg.hear_both,
             "let_sleep": cfg.let_sleep,
             "scroll": {"speed": if cfg.scroll_speed > 0.0 { cfg.scroll_speed } else { 1.0 }, "invert": cfg.invert_scroll},
             "hearing": crate::audio::status(),

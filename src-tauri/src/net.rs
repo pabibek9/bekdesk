@@ -44,7 +44,11 @@ pub enum Req {
     Clip { kind: String, len: u64 },
     Files { items: Vec<FileItem>, paste: bool },
     /// Send this computer's sound to the asking computer (they're connected with Share Input, either way).
-    Audio,
+    /// `mute`: go quiet here meanwhile. Older versions don't say; then only a controlled computer goes quiet.
+    Audio {
+        #[serde(default)]
+        mute: Option<bool>,
+    },
     /// The asking computer sends its sound here to play (also on this computer's speakers).
     AudioPush,
     /// Send this computer's camera to the asking computer (only if the user shared it with that computer).
@@ -204,6 +208,19 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
     }
     let req: Req = timeout(Duration::from_secs(10), read_msg(&mut s)).await??;
     let ip = addr.ip();
+    // A paired computer we can't see is clearly awake if it's talking to us: find it again at the address it calls from.
+    if app.knows(&fp) && offline(&app, &fp) {
+        static TRIED: std::sync::Mutex<Option<(String, std::time::Instant)>> = std::sync::Mutex::new(None);
+        let mut tried = TRIED.lock().unwrap();
+        if !tried.as_ref().is_some_and(|(f, t)| *f == fp && t.elapsed() < Duration::from_secs(10)) {
+            *tried = Some((fp.clone(), std::time::Instant::now()));
+            let port = app.cfg.lock().unwrap().trusted.get(&fp).and_then(|t| t.addr.parse::<SocketAddr>().ok()).map_or(PORT, |a| a.port());
+            let app = app.clone();
+            tokio::spawn(async move {
+                let _ = dial(&app, &SocketAddr::new(ip, port).to_string()).await;
+            });
+        }
+    }
     match req {
         Req::Pair { name, os } => {
             let r = pair_incoming(&app, &fp, &name, &os).await;
@@ -272,14 +289,13 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
             }
             receive_files(&app, &fp, &mut s, items, paste).await
         }
-        Req::Audio => {
+        Req::Audio { mute } => {
             // Only a paired computer connected with Share Input (either way) gets this computer's sound, and only while it is.
             let linked = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
             if !linked(&app) || !app.knows(&fp) {
                 return write_msg(&mut s, &Resp::err("Share Input isn't on")).await;
             }
-            // The computer being controlled goes quiet while its sound plays on the controlling one.
-            let mute_here = app.sessions.lock().unwrap().get(&fp).is_some_and(|x| !x.origin);
+            let mute_here = mute.unwrap_or_else(|| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| !x.origin));
             if let Err(e) = crate::audio::can_send() {
                 return write_msg(&mut s, &Resp::err(format!("{e:#}"))).await;
             }
@@ -495,6 +511,24 @@ pub fn local_ip() -> Option<IpAddr> {
 /// Wi-Fi that isolates devices or across subnets. Returns its fingerprint; it then behaves like a discovered peer.
 pub async fn connect_address(app: &Arc<App>, host: &str) -> Result<String> {
     let host = host.trim();
+    let fp = dial(app, host).await?;
+    {
+        let mut c = app.cfg.lock().unwrap();
+        if !c.manual.iter().any(|m| m == host) {
+            c.manual.push(host.to_string());
+        }
+    }
+    app.save();
+    Ok(fp)
+}
+
+/// Whether a paired computer is missing from the list (discovery lost it, or it stopped answering).
+pub fn offline(app: &App, fp: &str) -> bool {
+    !app.peers.lock().unwrap().contains_key(fp) || app.stale.lock().unwrap().contains(fp)
+}
+
+/// Ask whoever runs bekdesk at `host` who they are and list them as a peer. Trust still comes only from pairing.
+pub async fn dial(app: &Arc<App>, host: &str) -> Result<String> {
     if host.is_empty() || host.len() > 253 {
         bail!("type the other computer's address, e.g. 192.168.1.23");
     }
@@ -525,13 +559,6 @@ pub async fn connect_address(app: &Arc<App>, host: &str) -> Result<String> {
     if app.peers.lock().unwrap().insert(fp.clone(), peer.clone()).is_none() {
         app.log(format!("added {} by address {}", peer.name, addr));
     }
-    {
-        let mut c = app.cfg.lock().unwrap();
-        if !c.manual.iter().any(|m| m == host) {
-            c.manual.push(host.to_string());
-        }
-    }
-    app.save();
     Ok(fp)
 }
 
@@ -720,6 +747,13 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_request_from_older_versions_still_reads() {
+        // 0.1.29 and older send no "mute"; then the receiver decides as before.
+        assert!(matches!(serde_json::from_str::<Req>(r#"{"t":"audio"}"#).unwrap(), Req::Audio { mute: None }));
+        assert!(matches!(serde_json::from_str::<Req>(r#"{"t":"audio","mute":true}"#).unwrap(), Req::Audio { mute: Some(true) }));
+    }
 
     #[test]
     fn rel_paths_are_sanitized() {

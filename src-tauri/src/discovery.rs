@@ -59,7 +59,13 @@ pub fn start(app: Arc<App>) -> Result<ServiceDaemon> {
                     }
                 }
                 ServiceEvent::ServiceRemoved(_, fullname) => {
-                    app.peers.lock().unwrap().retain(|_, p| p.fullname != fullname);
+                    // Wi-Fi often drops discovery packets: only forget a computer that really stopped answering,
+                    // or a working connection to it would be cut for nothing.
+                    let gone = app.peers.lock().unwrap().values().find(|p| p.fullname == fullname).cloned();
+                    let answers = gone.as_ref().is_some_and(|p| p.addrs.first().is_some_and(|ip| std::net::TcpStream::connect_timeout(&std::net::SocketAddr::new(*ip, p.port), std::time::Duration::from_secs(2)).is_ok()));
+                    if !answers {
+                        app.peers.lock().unwrap().retain(|_, p| p.fullname != fullname);
+                    }
                 }
                 _ => {}
             }

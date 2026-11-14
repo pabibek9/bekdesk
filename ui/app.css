@@ -170,6 +170,7 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 .addr-connect .pinrow { margin-top: 8px; }
 .addr-connect input { width: 240px; text-align: left; font: inherit; letter-spacing: 0; }
 .acts1 { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.snd.sub { margin: 6px 0 0 24px; }
 .snd { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--ink2); }
 .addtab { margin-top: 14px; font-size: 13px; }
 .ico.sm { width: 30px; height: 30px; border-radius: 9px; }

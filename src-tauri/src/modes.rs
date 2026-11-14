@@ -1315,6 +1315,17 @@ pub async fn supervise(app: Arc<App>) {
                 });
             }
         }
+        // Every ~10 s: a paired computer that isn't listed (just woke up, or discovery lost it) is tried at the
+        // address it last answered from, so it comes back by itself instead of staying "Asleep or off".
+        if n % 5 == 3 {
+            let lost: Vec<String> = app.cfg.lock().unwrap().trusted.iter().filter(|(_, t)| !t.addr.is_empty()).map(|(fp, t)| (fp.clone(), t.addr.clone())).filter(|(fp, _)| net::offline(&app, fp)).map(|(_, a)| a).collect();
+            for addr in lost {
+                let app = app.clone();
+                tokio::spawn(async move {
+                    let _ = net::dial(&app, &addr).await;
+                });
+            }
+        }
         // Computers added by address aren't found by mDNS; keep them connected (and re-find them after a restart).
         if n % 15 == 1 {
             let manual = app.cfg.lock().unwrap().manual.clone();
