@@ -277,7 +277,7 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     let window = if app2.cfg.lock().unwrap().windowed.contains(&fp2) { "windowed" } else { "fullscreen" };
                     let args = [
                         "stream", &host, "Desktop", "--display-mode", window, "--resolution", &format!("{w}x{h}"), "--fps", &fps.to_string(),
-                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--bitrate", &(w * h * fps / 4000).clamp(10_000, 150_000).to_string(),
+                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--game-optimization", "--bitrate", &(w * h * fps / 4000).clamp(10_000, 150_000).to_string(),
                     ]
                     .map(String::from)
                     .to_vec();
@@ -525,7 +525,10 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         fwd(&cert),
         fwd(&apps),
         fwd(&dir.join("sunshine.log"))
-    ) + if app.cfg.lock().unwrap().sound.get(key).copied().unwrap_or(false) { "" } else { "stream_audio = disabled\n" };
+    ) + if app.cfg.lock().unwrap().sound.get(key).copied().unwrap_or(false) { "" } else { "stream_audio = disabled\n" }
+        // Duplicate, "fill the other screen": this PC switches to the size the other screen asks for while it's
+        // shown there, and back afterwards, so the picture fills that screen instead of having black bars.
+        + if output.is_none() && app.cfg.lock().unwrap().fill.contains(key) { "dd_configuration_option = verify_only\ndd_resolution_option = auto\ndd_refresh_rate_option = disabled\ndd_hdr_option = disabled\ndd_config_revert_on_disconnect = enabled\n" } else { "" };
     let conf_path = dir.join("sunshine.conf");
     // The virtual monitor's Sunshine id is stable; remembering it lets Extend start Sunshine once instead of twice.
     let id_file = dir.join("output_id.txt");

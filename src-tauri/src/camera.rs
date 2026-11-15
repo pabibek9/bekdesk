@@ -100,6 +100,22 @@ fn capture(tx: tokio::sync::mpsc::Sender<Vec<u8>>) -> Result<()> {
     Ok(())
 }
 
+/// Fits an RGB picture into a `w`×`h` BGR one (nearest pixel; black bars where the shapes differ).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn fit_bgr(rgb: &[u8], (fw, fh): (usize, usize), out: &mut Vec<u8>, (w, h): (usize, usize)) {
+    out.clear();
+    out.resize(w * h * 3, 0);
+    let (pw, ph) = if fw * h > fh * w { (w, (fh * w / fw).max(1)) } else { ((fw * h / fh).max(1), h) };
+    let (ox, oy) = ((w - pw) / 2, (h - ph) / 2);
+    for y in 0..ph {
+        let row = (y * fh / ph) * fw;
+        for x in 0..pw {
+            let (s, d) = ((row + x * fw / pw) * 3, ((y + oy) * w + x + ox) * 3);
+            out[d..d + 3].copy_from_slice(&[rgb[s + 2], rgb[s + 1], rgb[s]]);
+        }
+    }
+}
+
 /// First complete JPEG in `buf`: start of its FF D8 and just past its FF D9.
 #[cfg_attr(windows, allow(dead_code))]
 fn jpeg_bounds(buf: &[u8]) -> Option<(usize, usize)> {
@@ -239,7 +255,9 @@ mod win {
             let delete: Delete = std::mem::transmute(f(b"scDeleteCamera\0")?);
             let connected: Option<Connected> = GetProcAddress(lib, b"scIsConnected\0".as_ptr()).map(|p| std::mem::transmute(p));
             // Created up front so camera apps list it and can open it before any picture arrives.
-            let mut cam: (*mut core::ffi::c_void, u32, u32) = (create(1280, 720, 0.0), 1280, 720);
+            const W: usize = 1280;
+            const H: usize = 720;
+            let cam = (create(W as i32, H as i32, 0.0),);
             if cam.0.is_null() {
                 bail!("another app is already using the bekdesk camera");
             }
@@ -254,30 +272,13 @@ mod win {
                 let mut d = jpeg_decoder::Decoder::new(&jpeg[..]);
                 let Ok(rgb) = d.decode() else { continue };
                 let Some(info) = d.info() else { continue };
-                // Softcam wants sizes in multiples of 4; trim the last few pixels if needed.
-                let (fw, fh) = (info.width as u32, info.height as u32);
-                let (w, h) = (fw & !3, fh & !3);
-                if rgb.len() < (fw * fh * 3) as usize || w == 0 || h == 0 {
+                let (fw, fh) = (info.width as usize, info.height as usize);
+                if fw == 0 || fh == 0 || rgb.len() < fw * fh * 3 {
                     continue;
                 }
-                if (cam.1, cam.2) != (w, h) {
-                    if !cam.0.is_null() {
-                        delete(cam.0);
-                    }
-                    cam = (create(w as i32, h as i32, 0.0), w, h);
-                    if cam.0.is_null() {
-                        bail!("another app is already using the bekdesk camera");
-                    }
-                }
-                // RGB → BGR, rows kept top-down (Softcam flips for DirectShow itself).
-                bgr.resize((w * h * 3) as usize, 0);
-                for y in 0..h {
-                    let src = &rgb[(y * fw * 3) as usize..][..(w * 3) as usize];
-                    let dst = &mut bgr[(y * w * 3) as usize..][..(w * 3) as usize];
-                    for (d, s) in dst.chunks_exact_mut(3).zip(src.chunks_exact(3)) {
-                        d.copy_from_slice(&[s[2], s[1], s[0]]);
-                    }
-                }
+                // The camera keeps one size for its whole life: recreating it for a different picture size would
+                // cut off the app that has it open (a black picture), so every frame is fitted into it instead.
+                super::fit_bgr(&rgb, (fw, fh), &mut bgr, (W, H));
                 send(cam.0, bgr.as_ptr() as *const _);
             }
             if !cam.0.is_null() {
@@ -347,6 +348,21 @@ mod tests {
         let named = [("video0".to_string(), "Integrated Camera\n".to_string()), ("video42".to_string(), "bekdesk-camera\n".to_string())];
         assert_eq!(super::pick_camera(&named).as_deref(), Some("/dev/video42"));
         assert_eq!(super::pick_camera(&named[..1]), None);
+    }
+
+    #[test]
+    fn fits_a_picture_into_the_camera_size() {
+        // A 2×1 red|blue picture into 4×4: doubled across, centred, black bars above and below, colours as BGR.
+        let rgb = [255, 0, 0, 0, 0, 255];
+        let mut out = vec![];
+        super::fit_bgr(&rgb, (2, 1), &mut out, (4, 4));
+        let px = |x: usize, y: usize| out[(y * 4 + x) * 3..][..3].to_vec();
+        assert_eq!(px(0, 0), [0, 0, 0]);
+        assert_eq!((px(0, 1), px(1, 1), px(2, 1), px(3, 2)), (vec![0, 0, 255], vec![0, 0, 255], vec![255, 0, 0], vec![255, 0, 0]));
+        assert_eq!(px(3, 3), [0, 0, 0]);
+        // Same size: copied through.
+        super::fit_bgr(&rgb, (2, 1), &mut out, (2, 1));
+        assert_eq!(out, [0, 0, 255, 255, 0, 0]);
     }
 
     #[test]

@@ -1,3 +1,13 @@
+## bekdesk 0.1.34 — preview
+
+Update every computer you use together.
+
+### Camera
+- **Black picture in camera apps (Windows):** when the other computer's camera sent a different picture size than "bekdesk camera" started with, the camera was rebuilt and the app showing it was cut off. The camera now keeps one size and every picture is fitted into it.
+
+### Duplicate
+- **Fill the other screen:** on the PC sharing its screen, **Options → Fill <name>'s screen**. While duplicating, this PC switches to the other screen's size (and back afterwards), so the picture fills that screen instead of showing black bars. Off by default, Windows only.
+
 ## bekdesk 0.1.33 — preview
 
 Update every computer you use together.

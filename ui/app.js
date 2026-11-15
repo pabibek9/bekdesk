@@ -154,6 +154,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
     sharing || controlled ? micToggles(d) : "",
     sharing || controlled ? camToggles(d) : "",
     controlled ? awakeToggle(d) : "",
+    mode === "mirror" && S.me.os === "windows" && (!ses || ses.origin) ? `<label class="snd"><input type="checkbox" data-fill="${esc(d.fp)}" ${(S.fill || []).includes(d.fp) ? "checked" : ""}/> Fill ${name}'s screen: this PC switches to that screen's size while it's duplicated (no black bars)</label>` : "",
     viewing ? `<label class="snd"><input type="checkbox" data-windowed="${esc(d.fp)}" ${(S.windowed || []).includes(d.fp) ? "checked" : ""}/> Show ${name}'s screen in a window I can resize (from the next time it connects)</label>` : "",
     mode !== "off" && !busy[d.fp] && !stuck ? `<div class="acts1">${reconnectBtn(d.fp)}</div>` : "",
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
@@ -421,6 +422,13 @@ $("#device-list").addEventListener("change", async (e) => {
     const k = share ? "mic_share" : "use_mic";
     S[k] = on ? [...(share ? S[k] || [] : []), fp] : (S[k] || []).filter((x) => x !== fp); // using: one at a time
     call("set_mic", { fp, share, on });
+    return;
+  }
+  if (e.target.dataset.fill) {
+    const fp = e.target.dataset.fill, on = e.target.checked;
+    S.fill = on ? [...(S.fill || []), fp] : (S.fill || []).filter((x) => x !== fp);
+    await call("set_fill", { fp, on });
+    reconnect(fp); // the picture takes the new size when it starts again
     return;
   }
   if (e.target.dataset.pushOnly) {

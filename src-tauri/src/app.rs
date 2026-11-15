@@ -103,6 +103,8 @@ pub struct Config {
     pub windowed: std::collections::HashSet<String>,
     /// Computers that play this computer's sound instead of it (this one goes quiet), not as well as it.
     pub push_only: std::collections::HashSet<String>,
+    /// Duplicate to these computers fills their screen: this PC takes their screen size while it's shown there.
+    pub fill: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -515,6 +517,7 @@ impl App {
             "sound": cfg.sound,
             "hear": cfg.hear,
             "hub": cfg.hub,
+            "fill": cfg.fill,
             "push_only": cfg.push_only,
             "windowed": cfg.windowed,
             "wants": *self.wants.lock().unwrap(),

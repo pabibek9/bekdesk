@@ -188,6 +188,15 @@ async fn set_push_only(app: Core<'_>, fp: String, on: bool) -> Result<(), String
     Ok(())
 }
 
+/// Duplicate to `fp`: whether this PC takes that screen's size while shown there, so the picture fills it.
+#[tauri::command]
+fn set_fill(app: Core, fp: String, on: bool) {
+    let mut cfg = app.cfg.lock().unwrap();
+    if on { cfg.fill.insert(fp) } else { cfg.fill.remove(&fp) };
+    drop(cfg);
+    app.save();
+}
+
 /// Microphone sharing: `share` lets `fp` use this computer's microphone; otherwise `fp`'s microphone is used here.
 #[tauri::command]
 async fn set_mic(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(), String> {
@@ -955,7 +964,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_hear_both, set_push_only, set_windowed, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, set_hub, auto_lock, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_hear_both, set_push_only, set_fill, set_windowed, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, set_hub, auto_lock, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {
