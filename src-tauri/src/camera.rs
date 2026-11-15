@@ -15,10 +15,16 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 /// Largest frame accepted (a 1080p JPEG is well under this).
 const MAX_FRAME: u32 = 8 * 1024 * 1024;
 
-/// Sending side: stream this computer's camera as JPEG frames until the other side stops.
-pub async fn send<W: AsyncWrite + Unpin>(out: &mut W) -> Result<()> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(3);
+/// Sending side: switch this computer's camera on. Done before telling the other computer "yes", so a camera
+/// that can't start is reported to it in words instead of as a dropped connection.
+pub fn open() -> Result<tokio::sync::mpsc::Receiver<Vec<u8>>> {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(3);
     capture(tx)?;
+    Ok(rx)
+}
+
+/// Sending side: stream the opened camera's JPEG frames until the other side stops.
+pub async fn send<W: AsyncWrite + Unpin>(mut rx: tokio::sync::mpsc::Receiver<Vec<u8>>, out: &mut W) -> Result<()> {
     while let Some(jpeg) = rx.recv().await {
         out.write_all(&(jpeg.len() as u32).to_le_bytes()).await?;
         out.write_all(&jpeg).await?;
@@ -30,15 +36,32 @@ pub async fn send<W: AsyncWrite + Unpin>(out: &mut W) -> Result<()> {
 #[cfg(windows)]
 fn capture(tx: tokio::sync::mpsc::Sender<Vec<u8>>) -> Result<()> {
     use nokhwa::pixel_format::RgbFormat;
-    use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
+    use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType, Resolution};
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();
     // The camera object stays on its own thread; it ends when the receiving side goes away.
     std::thread::spawn(move || {
         let opened = (|| -> Result<nokhwa::Camera> {
-            let mut cam = nokhwa::Camera::new(CameraIndex::Index(0), RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(CameraFormat::new_from(1280, 720, FrameFormat::MJPEG, 30))))
-                .context("no camera found on this computer")?;
-            cam.open_stream().context("the camera is busy or blocked (Windows Settings → Privacy → Camera)")?;
-            Ok(cam)
+            // Cameras differ in what they offer (many laptop cameras have no compressed 1280×720 mode, and asking
+            // for exactly that fails), so try the preferred mode first and then whatever the camera does have.
+            let wanted = [
+                RequestedFormatType::Closest(CameraFormat::new_from(1280, 720, FrameFormat::MJPEG, 30)),
+                RequestedFormatType::HighestResolution(Resolution::new(1280, 720)),
+                RequestedFormatType::HighestResolution(Resolution::new(640, 480)),
+                RequestedFormatType::HighestFrameRate(30),
+                RequestedFormatType::AbsoluteHighestResolution,
+                RequestedFormatType::None,
+            ];
+            let mut last = anyhow::anyhow!("no camera found on this computer");
+            for want in wanted {
+                match nokhwa::Camera::new(CameraIndex::Index(0), RequestedFormat::new::<RgbFormat>(want)) {
+                    Ok(mut cam) => match cam.open_stream() {
+                        Ok(()) => return Ok(cam),
+                        Err(e) => last = anyhow::anyhow!("this computer's camera is busy or blocked (close other camera apps; Windows Settings → Privacy & security → Camera): {e}"),
+                    },
+                    Err(e) => last = anyhow::anyhow!("this computer's camera couldn't start: {e}"),
+                }
+            }
+            Err(last)
         })();
         let mut cam = match opened {
             Ok(c) => {
@@ -152,7 +175,7 @@ async fn watch(app: &Arc<App>, key: &str) -> Result<()> {
         let (mut s, _) = crate::net::request(app, key, &Req::Camera { probe: false }).await?;
         STATUS.lock().unwrap().insert(key.to_string(), "playing".into());
         while used.load(Ordering::Relaxed) {
-            let len = s.read_u32_le().await?;
+            let len = s.read_u32_le().await.map_err(|_| anyhow::anyhow!("{}'s camera stopped sending. Check no other app is using the camera there, then it starts again by itself", app.peer_name(key)))?;
             if len > MAX_FRAME {
                 bail!("bad camera frame");
             }

@@ -1,3 +1,11 @@
+## bekdesk 0.1.35 — preview
+
+Update the computer whose camera is being used (and the other one, for the clearer messages).
+
+### Camera
+- **"Camera not on yet: peer closed connection…" (Windows):** bekdesk only opened a camera that offers one exact picture mode (1280×720, compressed). Many laptop cameras don't, so the camera never started and the connection was simply dropped. It now uses whatever modes the camera has.
+- **Real reasons instead of a dropped connection:** if the camera still can't start (in use by another app, or blocked in Windows privacy settings), the other computer's card now says so.
+
 ## bekdesk 0.1.34 — preview
 
 Update every computer you use together.

@@ -330,10 +330,18 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
                 }
                 return write_msg(&mut s, &Resp::err(format!("{0} hasn't allowed its camera yet. Press Allow on {0}", app.name()))).await;
             }
-            write_msg(&mut s, &Resp::ok()).await?;
             if probe {
-                return Ok(());
+                return write_msg(&mut s, &Resp::ok()).await;
             }
+            // Opening the camera can take a moment and blocks, so not on the async threads.
+            let frames = match tokio::task::spawn_blocking(crate::camera::open).await? {
+                Ok(f) => f,
+                Err(e) => {
+                    app.log(format!("camera for {}: {e:#}", app.peer_name(&fp)));
+                    return write_msg(&mut s, &Resp::err(format!("{}: {e:#}", app.name()))).await;
+                }
+            };
+            write_msg(&mut s, &Resp::ok()).await?;
             app.log(format!("sharing the camera with {}", app.peer_name(&fp)));
             let ended = async {
                 while shared(&app) {
@@ -341,7 +349,7 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
                 }
             };
             tokio::select! {
-                r = crate::camera::send(&mut s) => r,
+                r = crate::camera::send(frames, &mut s) => r,
                 _ = ended => Ok(()),
             }
         }
