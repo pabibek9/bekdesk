@@ -88,9 +88,13 @@
         <div class="sbody form"><h3>Device</h3>
           <label>Device name <input id="name" maxlength="60" /></label>
           <label class="row"><input type="checkbox" id="autostart" /> Start bekdesk when I sign in</label>
+          <label class="row"><input type="checkbox" id="hub" /> This is my main device: play the sound of every computer I connect with Share Input here</label>
+          <div class="hidden" id="nolock-row"><label class="row"><input type="checkbox" id="nolock" /> This computer has no keyboard of its own: don't lock its screen automatically</label>
+            <div class="small">Another computer's keyboard can't type on the lock or sign-in screen here. To also skip sign-in after a restart, turn on Automatic Login in the system's Settings → Users.</div></div>
           <div class="spd">Scroll speed when another computer controls this one <input type="range" id="scroll-speed" min="0.25" max="3" step="0.25" /> <b id="scroll-val"></b></div>
           <label class="row"><input type="checkbox" id="scroll-invert" /> Reverse scroll direction</label>
-          <div class="small">Two-finger scrolling is passed on; pinch and swipe gestures stay on the computer you're touching.</div>
+          <label class="row hidden" id="scroll-fix-row"><input type="checkbox" id="scroll-fix" /> Send this laptop's trackpad scrolling to the computer it controls (experimental)</label>
+          <div class="small">Pinch and swipe gestures can't be passed on; they stay on the computer you're touching.</div>
           <div class="row seg3" id="theme-seg" role="radiogroup" aria-label="Appearance">Appearance <button class="btn sm" data-theme="auto">Auto</button><button class="btn sm" data-theme="light">Light</button><button class="btn sm" data-theme="dark">Dark</button></div>
           <div class="row"><button class="link" data-open="inbox">Open received files</button></div>
         </div>
@@ -102,7 +106,7 @@
         <div class="sbody"><h3>Blocked devices</h3><div id="blocked" class="list"></div></div>
       </div>
       <div class="card scard"><div class="stile"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></svg></div>
-        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.29 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
+        <div class="sbody"><h3>About</h3><div class="small">bekdesk 0.1.36 · GPL-3.0-or-later. Free and open source. Parts bekdesk downloads when first needed are listed with their licences in THIRD_PARTY.md.</div><div id="links" class="links"></div></div>
       </div>
     </section>
   </main>

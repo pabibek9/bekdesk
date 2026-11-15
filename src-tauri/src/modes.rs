@@ -248,6 +248,10 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
             s.tasks.push(tokio::spawn(async move {
                 let pair = async {
                     let home = moonlight_home(&app2, &exe);
+                    let name = app2.peer_name(&fp2);
+                    if !listening(std::net::SocketAddr::new(ip, port), 20).await {
+                        bail!("can't reach {name}'s screen sharing. On {name}, press Reconnect and choose Yes when Windows asks to let bekdesk through the firewall");
+                    }
                     if !moonlight_paired(&exe, &home, &host).await {
                         // The pair window stays open after success, so watch for pairing and close it ourselves.
                         let mut c = spawn_in(&app2, &exe, &["pair".into(), host.clone(), "--pin".into(), pin], "moonlight-pair.log", &home)?;
@@ -270,13 +274,19 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     // comes along is decided by the host (stream_audio).
                     let (w, h) = display::primary_size(&app2.monitors.lock().unwrap()).unwrap_or((1920, 1080));
                     let fps = display::stream_fps(display::primary_refresh().unwrap_or(60));
+                    let window = if app2.cfg.lock().unwrap().windowed.contains(&fp2) { "windowed" } else { "fullscreen" };
                     let args = [
-                        "stream", &host, "Desktop", "--display-mode", "fullscreen", "--resolution", &format!("{w}x{h}"), "--fps", &fps.to_string(),
-                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--bitrate", &(w * h * fps / 4000).clamp(10_000, 150_000).to_string(),
+                        "stream", &host, "Desktop", "--display-mode", window, "--resolution", &format!("{w}x{h}"), "--fps", &fps.to_string(),
+                        "--no-vsync", "--no-frame-pacing", "--absolute-mouse", "--keep-awake", "--game-optimization", "--bitrate", &(w * h * fps / 4000).clamp(10_000, 150_000).to_string(),
                     ]
                     .map(String::from)
                     .to_vec();
-                    spawn_in(&app2, &exe, &args, "moonlight-stream.log", &home)
+                    let child = spawn_in(&app2, &exe, &args, "moonlight-stream.log", &home)?;
+                    // Another computer started this, so nobody clicked here: put the picture in front of other windows.
+                    if let Some(pid) = child.id() {
+                        display::raise_window(pid);
+                    }
+                    Ok(child)
                 }
                 .await;
                 match pair {
@@ -432,10 +442,14 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
     let (conf, ini) = (dir.join("server.conf"), dir.join("server.ini"));
     let (links_conf, computers) = server_config(app);
     std::fs::write(&conf, links_conf)?;
+    // Windows only sends a laptop trackpad's two-finger scrolling to a program that can see it. Letting the
+    // keyboard-sharing part take the foreground while the pointer is on another computer is the known way to
+    // make that scrolling reach it (the old default of this kind of tool). Not confirmed on real hardware yet.
+    let keep = app.cfg.lock().unwrap().no_scroll_fix;
     std::fs::write(
         &ini,
         format!(
-            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nenableClipboard=false\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
+            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nenableClipboard=false\nwin32KeepForeground={keep}\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
             App::screen_name(&app.id.fp),
             fwd(&conf)
         ),
@@ -450,8 +464,27 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
 
 type Respawn = (PathBuf, Vec<String>, String);
 
+/// Whether something accepts connections at `addr` within about `secs` seconds.
+async fn listening(addr: std::net::SocketAddr, secs: u32) -> bool {
+    for _ in 0..secs * 2 {
+        if matches!(tokio::time::timeout(Duration::from_secs(1), tokio::net::TcpStream::connect(addr)).await, Ok(Ok(_))) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
 async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, receiver: &str, listen_only: bool) -> Result<(tokio::process::Child, Respawn, (String, String))> {
     let exe = ensure(app, "sunshine", key).await?;
+    // Windows Firewall blocks other computers from seeing this screen until it's allowed: ask once (admin prompt).
+    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !crate::service::firewall_allowed(&exe) && !ASKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        let args = vec!["--firewall".to_string(), exe.display().to_string()];
+        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || crate::service::elevated(&args)).await {
+            app.log(format!("firewall: {e:#}"));
+        }
+    }
     let dir = app.dir.join("sunshine").join(&key[..key.len().min(12)]);
     std::fs::create_dir_all(&dir)?;
     let creds_file = dir.join("bekdesk-creds.txt");
@@ -489,14 +522,17 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         }
     }
     let conf = format!(
-        "sunshine_name = bekdesk {}{}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
+        "sunshine_name = bekdesk {}{}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\nsystem_tray = disabled\n",
         app.name().replace('\n', " "),
         if receiver.is_empty() { String::new() } else { format!(" for {}", receiver.replace('\n', " ")) },
         fwd(&pkey),
         fwd(&cert),
         fwd(&apps),
         fwd(&dir.join("sunshine.log"))
-    ) + if app.cfg.lock().unwrap().sound.get(key).copied().unwrap_or(false) { "" } else { "stream_audio = disabled\n" };
+    ) + if app.cfg.lock().unwrap().sound.get(key).copied().unwrap_or(false) { "" } else { "stream_audio = disabled\n" }
+        // Duplicate, "fill the other screen": this PC switches to the size the other screen asks for while it's
+        // shown there, and back afterwards, so the picture fills that screen instead of having black bars.
+        + if output.is_none() && app.cfg.lock().unwrap().fill.contains(key) { "dd_configuration_option = verify_only\ndd_resolution_option = auto\ndd_refresh_rate_option = disabled\ndd_hdr_option = disabled\ndd_config_revert_on_disconnect = enabled\n" } else { "" };
     let conf_path = dir.join("sunshine.conf");
     // The virtual monitor's Sunshine id is stable; remembering it lets Extend start Sunshine once instead of twice.
     let id_file = dir.join("output_id.txt");
@@ -515,14 +551,14 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         // its own log at startup, so check the remembered id there and restart only if it changed.
         let sun_log = dir.join("sunshine.log");
         let mut id = None;
-        for _ in 0..30 {
+        for _ in 0..80 {
             tokio::time::sleep(Duration::from_millis(500)).await;
             id = std::fs::read_to_string(&sun_log).ok().and_then(|t| display::device_id_from_log(&t, o));
             if id.is_some() {
                 break;
             }
         }
-        let id = id.context("Sunshine did not list the virtual monitor, so it can't be extended onto it (see sunshine.log)")?;
+        let id = id.context("the extra screen didn't show up for screen sharing, so Extend can't start. Press Reconnect; if it keeps failing, open Details on this card and send what it shows")?;
         if cached.as_deref() != Some(id.as_str()) {
             let _ = child.kill().await;
             std::fs::write(&conf_path, format!("{conf}output_name = {id}\n"))?;
@@ -531,6 +567,10 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         }
         // Sunshine knows the screen now; hide it until a device actually connects (prep-cmd brings it back).
         detach_virtual();
+    }
+    // The other computer connects as soon as it's told to: wait until screen sharing actually answers here.
+    if !listening((std::net::Ipv4Addr::LOCALHOST, port).into(), 30).await {
+        app.log(format!("screen sharing for {receiver} isn't answering on port {port} yet"));
     }
     Ok((child, (exe, args, log), creds))
 }
@@ -1312,6 +1352,18 @@ pub async fn supervise(app: Arc<App>) {
                     if let Ok(h) = net::hello(&app, &fp).await {
                         app.note_hello(&fp, &h);
                     }
+                });
+            }
+        }
+        // Every ~10 s: a paired computer that isn't listed (just woke up, or discovery lost it) is tried at the
+        // address it last answered from, so it comes back by itself instead of staying "Asleep or off".
+        if n % 5 == 3 {
+            // Collected first, so the settings lock isn't held while looking at the list of computers.
+            let known: Vec<(String, String)> = app.cfg.lock().unwrap().trusted.iter().filter(|(_, t)| !t.addr.is_empty()).map(|(fp, t)| (fp.clone(), t.addr.clone())).collect();
+            for (_, addr) in known.into_iter().filter(|(fp, _)| net::offline(&app, fp)) {
+                let app = app.clone();
+                tokio::spawn(async move {
+                    let _ = net::dial(&app, &addr).await;
                 });
             }
         }

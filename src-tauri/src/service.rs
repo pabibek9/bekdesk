@@ -40,8 +40,16 @@ pub fn touch() {
     }
 }
 
+/// After a bekdesk update: the camera part set up earlier is older than the one this version ships, so setup
+/// should run once more (it lives in a protected folder that only the admin step can write to).
+pub fn camera_outdated() -> bool {
+    let shipped = std::env::current_exe().ok().and_then(|e| std::fs::read(e.with_file_name("resources").join("softcam.dll")).ok());
+    let set_up = std::fs::read(bin_dir().join("softcam.dll")).ok();
+    matches!((shipped, set_up), (Some(a), Some(b)) if a != b)
+}
+
 #[cfg(windows)]
-pub use win::{elevated, install, run_service, uninstall, user_sid};
+pub use win::{allow_through_firewall, elevated, firewall_allowed, install, run_service, uninstall, user_sid};
 
 #[cfg(not(windows))]
 pub fn install(_: &str, _: &std::path::Path) -> Result<()> {
@@ -60,6 +68,31 @@ pub fn elevated(_: &[String]) -> Result<()> {
 #[cfg(not(windows))]
 pub fn user_sid() -> Result<String> {
     anyhow::bail!("only on Windows")
+}
+#[cfg(not(windows))]
+pub fn firewall_allowed(_: &std::path::Path) -> bool {
+    true
+}
+#[cfg(not(windows))]
+pub fn allow_through_firewall(_: &std::path::Path) -> Result<()> {
+    anyhow::bail!("only on Windows")
+}
+
+/// Whether `netsh … show rule verbose` output has a rule for the program at `exe` (paths compare without case).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn rule_covers(shown: &str, exe: &str) -> bool {
+    shown.lines().any(|l| l.split_once(':').is_some_and(|(k, v)| k.trim().eq_ignore_ascii_case("program") && v.trim().eq_ignore_ascii_case(exe)))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reads_firewall_rule_program() {
+        let shown = "Rule Name:   bekdesk screen sharing\r\nEnabled:   Yes\r\nProgram:   C:\\Users\\Me\\AppData\\bekdesk\\engines\\Sunshine.exe\r\nAction:   Allow\r\n";
+        assert!(super::rule_covers(shown, "c:\\users\\me\\appdata\\bekdesk\\engines\\sunshine.exe"));
+        assert!(!super::rule_covers(shown, "C:\\other\\sunshine.exe"));
+        assert!(!super::rule_covers("No rules match the specified criteria.", "C:\\x.exe"));
+    }
 }
 
 #[cfg(windows)]
@@ -151,6 +184,25 @@ mod win {
         let o = std::process::Command::new("whoami").args(["/user", "/fo", "csv", "/nh"]).creation_flags(0x0800_0000).output()?;
         let s = String::from_utf8_lossy(&o.stdout);
         s.trim().rsplit(',').next().map(|x| x.trim_matches('"').to_string()).filter(|x| x.starts_with("S-1-5-")).context("couldn't read this user's id")
+    }
+
+    const FW_RULE: &str = "name=bekdesk screen sharing";
+
+    /// Whether Windows Firewall already lets other computers reach the screen-sharing program at `exe`.
+    pub fn firewall_allowed(exe: &std::path::Path) -> bool {
+        std::process::Command::new("netsh")
+            .args(["advfirewall", "firewall", "show", "rule", FW_RULE, "verbose"])
+            .creation_flags(0x0800_0000)
+            .output()
+            .is_ok_and(|o| rule_covers(&String::from_utf8_lossy(&o.stdout), &exe.display().to_string()))
+    }
+
+    /// Elevated: let other computers on the network reach the screen-sharing program (it still needs its pairing).
+    pub fn allow_through_firewall(exe: &std::path::Path) -> Result<()> {
+        let program = format!("program={}", exe.display());
+        // A dismissed Windows firewall prompt leaves a block rule for the program, and a block always wins.
+        let _ = run("netsh", &["advfirewall", "firewall", "delete", "rule", "name=all", &program]);
+        run("netsh", &["advfirewall", "firewall", "add", "rule", FW_RULE, "dir=in", "action=allow", &program, "enable=yes"])
     }
 
     /// Runs this exe again with `args` after a visible Windows admin prompt; waits for it to finish.

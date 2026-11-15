@@ -1,5 +1,6 @@
 //! Use another computer's camera here: the owner shares it, and on Windows it shows up in Zoom, Teams, browsers and
-//! other camera apps as "bekdesk camera" (the bundled Softcam DirectShow filter, registered by the admin setup).
+//! other camera apps as "bekdesk camera" (the bundled Softcam DirectShow filter, registered by the admin setup);
+//! on Linux as "bekdesk-camera" (the v4l2loopback kernel module, which the user installs).
 //! Frames travel as JPEG, each prefixed with its length (u32, little-endian), over the bekdesk TLS channel.
 
 use crate::app::{App, Mode};
@@ -7,15 +8,23 @@ use crate::net::Req;
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(not(windows))]
+use tokio::io::AsyncRead;
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Largest frame accepted (a 1080p JPEG is well under this).
 const MAX_FRAME: u32 = 8 * 1024 * 1024;
 
-/// Sending side: stream this computer's camera as JPEG frames until the other side stops.
-pub async fn send<W: AsyncWrite + Unpin>(out: &mut W) -> Result<()> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(3);
+/// Sending side: switch this computer's camera on. Done before telling the other computer "yes", so a camera
+/// that can't start is reported to it in words instead of as a dropped connection.
+pub fn open() -> Result<tokio::sync::mpsc::Receiver<Vec<u8>>> {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(3);
     capture(tx)?;
+    Ok(rx)
+}
+
+/// Sending side: stream the opened camera's JPEG frames until the other side stops.
+pub async fn send<W: AsyncWrite + Unpin>(mut rx: tokio::sync::mpsc::Receiver<Vec<u8>>, out: &mut W) -> Result<()> {
     while let Some(jpeg) = rx.recv().await {
         out.write_all(&(jpeg.len() as u32).to_le_bytes()).await?;
         out.write_all(&jpeg).await?;
@@ -27,15 +36,32 @@ pub async fn send<W: AsyncWrite + Unpin>(out: &mut W) -> Result<()> {
 #[cfg(windows)]
 fn capture(tx: tokio::sync::mpsc::Sender<Vec<u8>>) -> Result<()> {
     use nokhwa::pixel_format::RgbFormat;
-    use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
+    use nokhwa::utils::{CameraFormat, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType, Resolution};
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();
     // The camera object stays on its own thread; it ends when the receiving side goes away.
     std::thread::spawn(move || {
         let opened = (|| -> Result<nokhwa::Camera> {
-            let mut cam = nokhwa::Camera::new(CameraIndex::Index(0), RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(CameraFormat::new_from(1280, 720, FrameFormat::MJPEG, 30))))
-                .context("no camera found on this computer")?;
-            cam.open_stream().context("the camera is busy or blocked (Windows Settings → Privacy → Camera)")?;
-            Ok(cam)
+            // Cameras differ in what they offer (many laptop cameras have no compressed 1280×720 mode, and asking
+            // for exactly that fails), so try the preferred mode first and then whatever the camera does have.
+            let wanted = [
+                RequestedFormatType::Closest(CameraFormat::new_from(1280, 720, FrameFormat::MJPEG, 30)),
+                RequestedFormatType::HighestResolution(Resolution::new(1280, 720)),
+                RequestedFormatType::HighestResolution(Resolution::new(640, 480)),
+                RequestedFormatType::HighestFrameRate(30),
+                RequestedFormatType::AbsoluteHighestResolution,
+                RequestedFormatType::None,
+            ];
+            let mut last = anyhow::anyhow!("no camera found on this computer");
+            for want in wanted {
+                match nokhwa::Camera::new(CameraIndex::Index(0), RequestedFormat::new::<RgbFormat>(want)) {
+                    Ok(mut cam) => match cam.open_stream() {
+                        Ok(()) => return Ok(cam),
+                        Err(e) => last = anyhow::anyhow!("this computer's camera is busy or blocked (close other camera apps; Windows Settings → Privacy & security → Camera): {e}"),
+                    },
+                    Err(e) => last = anyhow::anyhow!("this computer's camera couldn't start: {e}"),
+                }
+            }
+            Err(last)
         })();
         let mut cam = match opened {
             Ok(c) => {
@@ -97,6 +123,22 @@ fn capture(tx: tokio::sync::mpsc::Sender<Vec<u8>>) -> Result<()> {
     Ok(())
 }
 
+/// Fits an RGB picture into a `w`×`h` BGR one (nearest pixel; black bars where the shapes differ).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn fit_bgr(rgb: &[u8], (fw, fh): (usize, usize), out: &mut Vec<u8>, (w, h): (usize, usize)) {
+    out.clear();
+    out.resize(w * h * 3, 0);
+    let (pw, ph) = if fw * h > fh * w { (w, (fh * w / fw).max(1)) } else { ((fw * h / fh).max(1), h) };
+    let (ox, oy) = ((w - pw) / 2, (h - ph) / 2);
+    for y in 0..ph {
+        let row = (y * fh / ph) * fw;
+        for x in 0..pw {
+            let (s, d) = ((row + x * fw / pw) * 3, ((y + oy) * w + x + ox) * 3);
+            out[d..d + 3].copy_from_slice(&[rgb[s + 2], rgb[s + 1], rgb[s]]);
+        }
+    }
+}
+
 /// First complete JPEG in `buf`: start of its FF D8 and just past its FF D9.
 #[cfg_attr(windows, allow(dead_code))]
 fn jpeg_bounds(buf: &[u8]) -> Option<(usize, usize)> {
@@ -105,12 +147,63 @@ fn jpeg_bounds(buf: &[u8]) -> Option<(usize, usize)> {
     Some((a, a + 2 + e + 2))
 }
 
-/// Receiving side: show the frames as this computer's "bekdesk camera" until the connection ends.
+/// Windows receiving side: "bekdesk camera" stays available to camera apps while this runs, but the other
+/// computer's real camera is only switched on while an app is actually using it.
+#[cfg(windows)]
+async fn watch(app: &Arc<App>, key: &str) -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(2);
+    let used = Arc::new(AtomicBool::new(false));
+    let shower = {
+        let used = used.clone();
+        std::thread::spawn(move || win::show(rx, used))
+    };
+    let stopped = |shower: std::thread::JoinHandle<Result<()>>| -> Result<()> {
+        shower.join().map_err(|_| anyhow::anyhow!("the bekdesk camera stopped"))??;
+        bail!("the bekdesk camera stopped")
+    };
+    loop {
+        // Allowed? Asking also puts an Allow button on the owner's screen if not.
+        crate::net::request(app, key, &Req::Camera { probe: true }).await?;
+        STATUS.lock().unwrap().insert(key.to_string(), "ready".into());
+        while !used.load(Ordering::Relaxed) {
+            if shower.is_finished() {
+                return stopped(shower);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        let (mut s, _) = crate::net::request(app, key, &Req::Camera { probe: false }).await?;
+        STATUS.lock().unwrap().insert(key.to_string(), "playing".into());
+        while used.load(Ordering::Relaxed) {
+            let len = s.read_u32_le().await.map_err(|_| anyhow::anyhow!("{}'s camera stopped sending. Check no other app is using the camera there, then it starts again by itself", app.peer_name(key)))?;
+            if len > MAX_FRAME {
+                bail!("bad camera frame");
+            }
+            let mut jpeg = vec![0u8; len as usize];
+            s.read_exact(&mut jpeg).await?;
+            if shower.is_finished() {
+                return stopped(shower);
+            }
+            let _ = tx.try_send(jpeg);
+        }
+        // Dropping the connection here switches the other computer's camera off until an app wants it again.
+    }
+}
+
+/// Linux receiving side: show the frames as this computer's "bekdesk-camera" until the connection ends.
+#[cfg(not(windows))]
 pub async fn play<R: AsyncRead + Unpin>(input: &mut R) -> Result<()> {
-    #[cfg(windows)]
     {
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(2);
-        let shower = std::thread::spawn(move || win::show(rx));
+        let dev = virtual_camera()?;
+        // GStreamer decodes the JPEGs into the virtual camera, which camera apps then open like a real one.
+        let mut gst = tokio::process::Command::new("gst-launch-1.0")
+            .args(["-q", "fdsrc", "!", "image/jpeg,framerate=30/1", "!", "jpegdec", "!", "videoconvert", "!", "video/x-raw,format=YUY2", "!", "v4l2sink", &format!("device={dev}"), "sync=false"])
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .context("couldn't start the camera (GStreamer's gst-launch-1.0 is needed)")?;
+        let mut pipe = gst.stdin.take().context("no camera input")?;
         loop {
             let len = input.read_u32_le().await?;
             if len > MAX_FRAME {
@@ -118,19 +211,37 @@ pub async fn play<R: AsyncRead + Unpin>(input: &mut R) -> Result<()> {
             }
             let mut jpeg = vec![0u8; len as usize];
             input.read_exact(&mut jpeg).await?;
-            if shower.is_finished() {
-                break;
-            }
-            let _ = tx.try_send(jpeg);
+            pipe.write_all(&jpeg).await.context("the bekdesk camera stopped")?;
         }
-        drop(tx);
-        return shower.join().map_err(|_| anyhow::anyhow!("the camera stopped"))?;
     }
-    #[cfg(not(windows))]
-    {
-        let _ = input;
-        bail!("using another computer's camera works on Windows so far")
+}
+
+/// The "bekdesk camera" device among the names under `/sys/devices/virtual/video4linux/<videoN>/name`.
+#[cfg_attr(windows, allow(dead_code))]
+fn pick_camera(named: &[(String, String)]) -> Option<String> {
+    named.iter().find(|(_, name)| name.trim().starts_with("bekdesk")).map(|(dev, _)| format!("/dev/{dev}"))
+}
+
+/// Linux: the virtual camera (the v4l2loopback kernel module), switched on the first time through the system's
+/// own password prompt.
+#[cfg(not(windows))]
+fn virtual_camera() -> Result<String> {
+    if !cfg!(target_os = "linux") {
+        bail!("using another computer's camera on a Mac isn't available yet");
     }
+    let find = || {
+        let named: Vec<(String, String)> = std::fs::read_dir("/sys/devices/virtual/video4linux").into_iter().flatten().flatten().filter_map(|e| Some((e.file_name().to_string_lossy().into_owned(), std::fs::read_to_string(e.path().join("name")).ok()?))).collect();
+        pick_camera(&named)
+    };
+    if let Some(dev) = find() {
+        return Ok(dev);
+    }
+    // Ask once per run: a declined password prompt shouldn't come back every time the stream retries.
+    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !ASKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        let _ = std::process::Command::new("pkexec").args(["modprobe", "v4l2loopback", "video_nr=42", "card_label=bekdesk-camera", "exclusive_caps=1"]).status();
+    }
+    find().context("the virtual camera isn't installed. Install v4l2loopback (Kali/Ubuntu/Debian: sudo apt install v4l2loopback-dkms; Fedora: akmod-v4l2loopback from RPM Fusion), restart bekdesk, and allow the password prompt")
 }
 
 #[cfg(windows)]
@@ -147,7 +258,10 @@ mod win {
         crate::service::bin_dir().join("softcam.dll")
     }
 
-    pub fn show(rx: std::sync::mpsc::Receiver<Vec<u8>>) -> Result<()> {
+    type Connected = unsafe extern "C" fn(*mut core::ffi::c_void) -> bool;
+
+    /// Shows frames from `rx` as the bekdesk camera until `rx` closes; `used` says whether a camera app has it open.
+    pub fn show(rx: std::sync::mpsc::Receiver<Vec<u8>>, used: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Result<()> {
         let path = dll();
         if !path.exists() {
             bail!("the bekdesk camera isn't set up on this PC yet: Settings → Lock screen, camera and admin prompts → Turn on");
@@ -162,36 +276,46 @@ mod win {
             let create: Create = std::mem::transmute(f(b"scCreateCamera\0")?);
             let send: SendFrame = std::mem::transmute(f(b"scSendFrame\0")?);
             let delete: Delete = std::mem::transmute(f(b"scDeleteCamera\0")?);
-            let mut cam: (*mut core::ffi::c_void, u32, u32) = (std::ptr::null_mut(), 0, 0);
+            let connected: Option<Connected> = GetProcAddress(lib, b"scIsConnected\0".as_ptr()).map(|p| std::mem::transmute(p));
+            // Created up front so camera apps list it and can open it before any picture arrives.
+            const W: usize = 1280;
+            const H: usize = 720;
+            // A camera this app just let go of (switching it off and on) can take a moment to disappear.
+            let mut cam = (create(W as i32, H as i32, 0.0),);
+            for _ in 0..15 {
+                if !cam.0.is_null() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                cam.0 = create(W as i32, H as i32, 0.0);
+            }
+            if cam.0.is_null() {
+                bail!("another app is already using the bekdesk camera");
+            }
+            // The camera part answers "has an app asked for a picture since I last asked?"; an app that is showing
+            // the camera asks many times a second, so two quiet seconds mean it stopped.
+            let mut asked = std::time::Instant::now() - std::time::Duration::from_secs(60);
             let mut bgr = Vec::new();
-            while let Ok(jpeg) = rx.recv() {
+            loop {
+                if connected.is_none_or(|f| f(cam.0)) {
+                    asked = std::time::Instant::now();
+                }
+                used.store(asked.elapsed() < std::time::Duration::from_secs(2), std::sync::atomic::Ordering::Relaxed);
+                let jpeg = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                    Ok(j) => j,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(_) => break,
+                };
                 let mut d = jpeg_decoder::Decoder::new(&jpeg[..]);
                 let Ok(rgb) = d.decode() else { continue };
                 let Some(info) = d.info() else { continue };
-                // Softcam wants sizes in multiples of 4; trim the last few pixels if needed.
-                let (fw, fh) = (info.width as u32, info.height as u32);
-                let (w, h) = (fw & !3, fh & !3);
-                if rgb.len() < (fw * fh * 3) as usize || w == 0 || h == 0 {
+                let (fw, fh) = (info.width as usize, info.height as usize);
+                if fw == 0 || fh == 0 || rgb.len() < fw * fh * 3 {
                     continue;
                 }
-                if (cam.1, cam.2) != (w, h) {
-                    if !cam.0.is_null() {
-                        delete(cam.0);
-                    }
-                    cam = (create(w as i32, h as i32, 0.0), w, h);
-                    if cam.0.is_null() {
-                        bail!("another app is already using the bekdesk camera");
-                    }
-                }
-                // RGB → BGR, rows kept top-down (Softcam flips for DirectShow itself).
-                bgr.resize((w * h * 3) as usize, 0);
-                for y in 0..h {
-                    let src = &rgb[(y * fw * 3) as usize..][..(w * 3) as usize];
-                    let dst = &mut bgr[(y * w * 3) as usize..][..(w * 3) as usize];
-                    for (d, s) in dst.chunks_exact_mut(3).zip(src.chunks_exact(3)) {
-                        d.copy_from_slice(&[s[2], s[1], s[0]]);
-                    }
-                }
+                // The camera keeps one size for its whole life: recreating it for a different picture size would
+                // cut off the app that has it open (a black picture), so every frame is fitted into it instead.
+                super::fit_bgr(&rgb, (fw, fh), &mut bgr, (W, H));
                 send(cam.0, bgr.as_ptr() as *const _);
             }
             if !cam.0.is_null() {
@@ -233,8 +357,13 @@ pub fn sync(app: &Arc<App>) {
         streams.insert(
             fp,
             tokio::spawn(async move {
+                #[cfg(windows)]
+                let r = watch(&app, &key).await;
+                // shortcut: on Linux the other computer's camera stays on while this is switched on (the virtual
+                // camera can't say whether an app is watching); stream on demand if that bothers people.
+                #[cfg(not(windows))]
                 let r = async {
-                    let (mut s, _) = crate::net::request(&app, &key, &Req::Camera).await?;
+                    let (mut s, _) = crate::net::request(&app, &key, &Req::Camera { probe: false }).await?;
                     STATUS.lock().unwrap().insert(key.clone(), "playing".into());
                     play(&mut s).await
                 }
@@ -242,7 +371,8 @@ pub fn sync(app: &Arc<App>) {
                 let msg = r.err().map_or("stopped".to_string(), |e| format!("{e:#}"));
                 app.log(format!("camera from {}: {msg}", app.peer_name(&key)));
                 STATUS.lock().unwrap().insert(key, msg);
-                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                // Short, so the picture starts soon after the owner presses Allow.
+                tokio::time::sleep(std::time::Duration::from_secs(6)).await;
             }),
         );
     }
@@ -250,6 +380,28 @@ pub fn sync(app: &Arc<App>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn finds_the_bekdesk_camera() {
+        let named = [("video0".to_string(), "Integrated Camera\n".to_string()), ("video42".to_string(), "bekdesk-camera\n".to_string())];
+        assert_eq!(super::pick_camera(&named).as_deref(), Some("/dev/video42"));
+        assert_eq!(super::pick_camera(&named[..1]), None);
+    }
+
+    #[test]
+    fn fits_a_picture_into_the_camera_size() {
+        // A 2×1 red|blue picture into 4×4: doubled across, centred, black bars above and below, colours as BGR.
+        let rgb = [255, 0, 0, 0, 0, 255];
+        let mut out = vec![];
+        super::fit_bgr(&rgb, (2, 1), &mut out, (4, 4));
+        let px = |x: usize, y: usize| out[(y * 4 + x) * 3..][..3].to_vec();
+        assert_eq!(px(0, 0), [0, 0, 0]);
+        assert_eq!((px(0, 1), px(1, 1), px(2, 1), px(3, 2)), (vec![0, 0, 255], vec![0, 0, 255], vec![255, 0, 0], vec![255, 0, 0]));
+        assert_eq!(px(3, 3), [0, 0, 0]);
+        // Same size: copied through.
+        super::fit_bgr(&rgb, (2, 1), &mut out, (2, 1));
+        assert_eq!(out, [0, 0, 255, 255, 0, 0]);
+    }
+
     #[test]
     fn splits_back_to_back_jpegs() {
         let buf = [0x00, 0xFF, 0xD8, 1, 2, 0xFF, 0xD9, 0xFF, 0xD8, 3];

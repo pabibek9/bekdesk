@@ -1,3 +1,99 @@
+## bekdesk 0.1.36 — preview
+
+**After installing on the computer that uses another computer's camera: Settings → press Update** (Windows asks for admin permission once; close Zoom first). Without it the camera works as before but the fix below doesn't apply.
+
+### Camera
+- **The other computer's camera light stayed on after you left a meeting:** the camera part only knew that an app had opened it once, never that it stopped. It now reports whether an app is still asking for pictures, and the other computer's camera switches off about two seconds after the app stops.
+- **"Another app is already using it" right after switching the camera off and on:** bekdesk now waits a moment for its own previous camera to go away. Because the camera now really stops, the "camera is busy" message on the next use should go too.
+
+### Screens
+- **No more "Choose a Gamepad Driver" pop-up** (or other pop-ups from the screen-sharing part) while Duplicate or Extend is on. That pop-up was about game controllers only; it has nothing to do with Extend and nothing needs to be bought.
+
+## bekdesk 0.1.35 — preview
+
+Update the computer whose camera is being used (and the other one, for the clearer messages).
+
+### Camera
+- **"Camera not on yet: peer closed connection…" (Windows):** bekdesk only opened a camera that offers one exact picture mode (1280×720, compressed). Many laptop cameras don't, so the camera never started and the connection was simply dropped. It now uses whatever modes the camera has.
+- **Real reasons instead of a dropped connection:** if the camera still can't start (in use by another app, or blocked in Windows privacy settings), the other computer's card now says so.
+
+## bekdesk 0.1.34 — preview
+
+Update every computer you use together.
+
+### Camera
+- **Black picture in camera apps (Windows):** when the other computer's camera sent a different picture size than "bekdesk camera" started with, the camera was rebuilt and the app showing it was cut off. The camera now keeps one size and every picture is fitted into it.
+
+### Trackpad scrolling (experimental)
+- **Two-finger scrolling from a Windows laptop's trackpad onto the computer it controls:** Windows only hands that scrolling to a program that is in front, so it was lost while the pointer was on the other computer. Keyboard sharing now takes the front while the pointer is away and gives it back when you return. This is the known workaround, not yet confirmed on real laptops; if it causes trouble, switch it off in **Settings → Send this laptop's trackpad scrolling…**. Pinch and three-finger gestures can't be passed on at all.
+
+### Duplicate
+- **Fill the other screen:** on the PC sharing its screen, **Options → Fill <name>'s screen**. While duplicating, this PC switches to the other screen's size (and back afterwards), so the picture fills that screen instead of showing black bars. Off by default, Windows only.
+
+## bekdesk 0.1.33 — preview
+
+Update every computer you use together.
+
+### Fixes
+- **Cards didn't update after you pressed something on them:** after pressing Allow or flipping a switch, the card kept showing the old state until you clicked somewhere else, so Allow looked like it did nothing and new options didn't appear. Cards now update straight away.
+- **App not responding (for example Allow doing nothing):** a camera request could freeze bekdesk when it arrived at the same moment as a background check. The two no longer block each other.
+- **Manage Screens zooms back in** when you bring devices closer together (it only zoomed out before).
+- **Manage Screens says who shares with whom:** "Uses this PC's keyboard" or "Its keyboard controls this PC" instead of "Share Input" under the other computer.
+- **The screen viewer opens in front** of other windows on Windows when another computer starts Duplicate or Extend.
+- **Extend:** waits longer for the extra screen before giving up, and the message says what to do instead of naming an internal part.
+
+### Sound
+- **Only on the other computer:** under "Also play this PC's sound on <name>'s speakers" there is now **Only there: keep this PC quiet**. Together with "Play <name>'s sound on this PC" you can send sound in either direction and choose which side stays quiet.
+
+### Look
+- **Options are open while connected** (the "More" fold is named "Options" and starts open), so the switches are visible without hunting.
+
+## bekdesk 0.1.32 — preview
+
+Update every computer you use together.
+
+### Camera and microphone
+- **Allow button instead of hunting for a switch:** when another computer switches on "Use this PC's camera" (or microphone), this PC opens bekdesk and its card says "<name> wants to use this PC's camera" with **Allow** and **Not now**. Nothing is shared until you press Allow.
+- **"bekdesk camera" is available in Zoom straight away** on Windows once it's switched on, and the other computer's real camera only turns on while an app is actually using it (its light goes off when you close the app). On Linux it still stays on while switched on.
+- **One camera and one microphone at a time:** switching on another computer's switches the previous one off, so several microphones can't echo.
+- Clearer wording: "Camera not on yet: …" instead of "No sound yet: …", and "Ready. Pick bekdesk camera in your app".
+
+### Screens
+- **Connecting shows what's happening:** a spinner and a line such as "Starting the screen on <name>. The first time can take up to a minute…", so it doesn't look switched off.
+- **Duplicate / Extend in a window:** on the computer showing the screen, **More → Show <name>'s screen in a window I can resize** (used from the next time it connects). Zooming with the scroll wheel isn't possible in the viewer.
+- **Manage Screens shows only computers that are on.**
+
+### Look
+- Options are switches now, not tick boxes.
+
+## bekdesk 0.1.31 — preview
+
+### Fixes
+- **Blank page after pressing Lock all, Light/Dark mode or Quit:** those sidebar buttons were treated as page buttons and hid every page. Only the four page buttons switch pages now.
+- **Two mode buttons looking selected at once:** the button you last pressed kept a blue ring that looked like the selected mode. It is now a thin dashed grey ring; only the active mode is blue.
+- **Duplicate / Extend: "Failed to connect to …:48050"** on the computer that should show the screen. Two causes are handled:
+  - The viewer was started before screen sharing on the other computer was ready. bekdesk now waits until it answers.
+  - Windows Firewall on the computer sharing its screen blocked it. The first time you pick Duplicate or Extend, Windows asks for admin permission once so bekdesk can allow its screen sharing through the firewall (it still only works for paired devices). If it's still unreachable, the card says so instead of a viewer error window.
+
+## bekdesk 0.1.30 — preview
+
+Update every computer: the sound changes need 0.1.30 on both ends.
+
+### Fixes
+- **"Wake" on a computer that is already awake, or a computer that never comes back:** bekdesk now remembers where each paired computer last answered and tries it there every few seconds, and notices when that computer contacts it. A computer that woke up, or that network discovery lost, shows as connected again by itself within about ten seconds, and your saved mode restarts. This is also why Share Input sometimes couldn't be picked until you typed the address by hand.
+- **A working connection is no longer cut** when network discovery briefly loses a computer that is still answering (common on Wi-Fi).
+- **Sound stuck after a crash (Linux):** a leftover bekdesk sound output is removed before a new one is made.
+
+### Sound: one place for everything
+- **Settings → This is my main device:** every computer you connect with Share Input plays its sound on this one (its speakers, or the Bluetooth headphones connected to it), without ticking a box per computer. A computer with no speakers of its own works too.
+- **The other computer goes quiet** while its sound plays here, on Windows as well as Linux. Tick **Keep it playing on <name>'s speakers too** under **More** if you want both.
+
+### Camera
+- **A Linux computer can now use another computer's camera** (before, only Windows could). It needs the v4l2loopback virtual camera installed once (Kali/Ubuntu/Debian: `sudo apt install v4l2loopback-dkms`; Fedora: `akmod-v4l2loopback` from RPM Fusion). bekdesk switches it on through the system's password prompt, and it appears as **bekdesk-camera** in Zoom and browsers.
+
+### A computer without its own keyboard (Fedora)
+- **Settings → This computer has no keyboard of its own: don't lock its screen automatically** switches off GNOME's Automatic Screen Lock, so the screen never ends up on a lock screen that another computer's keyboard can't type on. To also skip signing in after a restart, turn on Automatic Login in Fedora's Settings → Users. bekdesk still never types a password or unlocks anything itself.
+
 ## bekdesk 0.1.29 — preview
 
 ### Fixes

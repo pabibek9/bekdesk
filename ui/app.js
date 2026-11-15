@@ -45,9 +45,10 @@ function moveInd() {
   if (b && ind) { ind.style.top = b.offsetTop + "px"; ind.style.height = b.offsetHeight + "px"; }
 }
 requestAnimationFrame(moveInd);
-document.querySelectorAll(".nav button").forEach((b) =>
+// Only the page buttons switch pages: Lock all, the theme switch and Quit also sit in the sidebar.
+document.querySelectorAll(".nav button[data-view]").forEach((b) =>
   b.addEventListener("click", () => {
-    document.querySelectorAll(".nav button").forEach((x) => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".nav button[data-view]").forEach((x) => x.classList.toggle("on", x === b));
     moveInd();
     document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.view));
     render();
@@ -58,7 +59,10 @@ document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("clic
 // ---------- devices ----------
 // Views are patched in place (never rebuilt every tick) so clicks, focus and animations survive refreshes.
 function setHTML(el, html) {
-  if (el._h === html || el.contains(document.activeElement)) return;
+  // Don't redraw under a field being typed in or a slider being dragged. A clicked button or switch keeps the
+  // focus too, and must not stop the card from updating (it made Allow look like it did nothing).
+  const a = document.activeElement;
+  if (el._h === html || (el.contains(a) && a.matches("input:not([type=checkbox]), textarea, select"))) return;
   el._h = html;
   el.innerHTML = html;
 }
@@ -78,31 +82,32 @@ const speedSlider = (key, name) => {
 // Share Input (either way): hear that computer here, and/or play this computer's sound there.
 // Ticking "play this PC's sound" on several computers plays it on all their speakers at once.
 const canSend = (os) => os === "linux" || os === "windows";
-const soundNote = (st, ok) => st ? `<div class="hint${st === "playing" ? " ok" : " warn"}">${st === "playing" ? ok : `No sound yet: ${esc(st)}`}</div>` : "";
-const hearToggle = (d, controlling) => {
+const soundNote = (st, ok, what = "No sound yet", ready = "") => st ? `<div class="hint${st === "playing" || st === "ready" ? " ok" : " warn"}">${st === "playing" ? ok : st === "ready" ? ready : `${what}: ${esc(st)}`}</div>` : "";
+const hearToggle = (d) => {
   if (!canSend(d.os)) return "";
-  const on = (S.hear || []).includes(d.fp), st = on && (S.hearing || {})["pull:" + d.fp];
-  const muted = controlling && d.os === "linux" ? ` (muted on ${esc(d.name)})` : "";
-  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""}/> Play ${esc(d.name)}'s sound on this PC${muted}</label>${soundNote(st, `Playing ${esc(d.name)}'s sound here.`)}`;
+  const on = S.hub || (S.hear || []).includes(d.fp), st = on && (S.hearing || {})["pull:" + d.fp];
+  const muted = (S.hear_both || []).includes(d.fp) ? "" : ` (${esc(d.name)} goes quiet)`;
+  return `<label class="snd"><input type="checkbox" data-hear="${esc(d.fp)}" ${on ? "checked" : ""} ${S.hub ? "disabled" : ""}/> Play ${esc(d.name)}'s sound on this PC${muted}${S.hub ? " (on for every computer in Settings)" : ""}</label>${on ? `<label class="snd sub"><input type="checkbox" data-hear-both="${esc(d.fp)}" ${(S.hear_both || []).includes(d.fp) ? "checked" : ""}/> Keep it playing on ${esc(d.name)}'s speakers too</label>` : ""}${soundNote(st, `Playing ${esc(d.name)}'s sound here.`)}`;
 };
 // Microphone: the owner shares it first; then the other computer can use it as a microphone here.
 const micToggles = (d) => {
   const share = (S.mic_share || []).includes(d.fp), use = (S.use_mic || []).includes(d.fp), st = use && (S.hearing || {})["mic:" + d.fp];
   const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-mic-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's microphone</label>` : "";
-  const theirs = canSend(d.os) ? `<label class="snd"><input type="checkbox" data-mic-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s microphone here${S.me.os === "linux" ? ` (pick "bekdesk-microphone" in your app)` : S.me.os === "windows" ? ` (pick "CABLE Output" in your app)` : ""}</label>${soundNote(st, `${esc(d.name)}'s microphone is on here.`)}` : "";
+  const theirs = canSend(d.os) ? `<label class="snd"><input type="checkbox" data-mic-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s microphone here${S.me.os === "linux" ? ` (pick "bekdesk-microphone" in your app)` : S.me.os === "windows" ? ` (pick "CABLE Output" in your app)` : ""}</label>${soundNote(st, `${esc(d.name)}'s microphone is on here.`, "Microphone not on yet")}` : "";
   return mine + theirs;
 };
 // Camera: the owner shares it first; then on Windows it appears as "bekdesk camera" in Zoom, Teams, browsers…
 const camToggles = (d) => {
   const share = (S.cam_share || []).includes(d.fp), use = (S.use_cam || []).includes(d.fp), st = use && (S.camera || {})[d.fp];
   const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's camera</label>` : "";
-  const theirs = canSend(d.os) && S.me.os === "windows" ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser)</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`)}` : "";
-  return mine + theirs;
+  const old = S.cam_update && use ? `<div class="hint warn">Update the bekdesk camera part in Settings (press Update), so ${esc(d.name)}'s camera switches off when you stop using it.</div>` : "";
+  const theirs = canSend(d.os) && canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser${S.me.os === "linux" ? "; asks for your password once" : ""})</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`, "Camera not on yet", `Ready. Pick "bekdesk camera" in your app; ${esc(d.name)}'s camera switches on only while an app uses it.`)}` : "";
+  return mine + theirs + old;
 };
 const pushToggle = (d) => {
   if (!canSend(S.me.os)) return "";
   const on = !!(S.sound || {})[d.fp], st = on && (S.hearing || {})["push:" + d.fp];
-  return `<label class="snd"><input type="checkbox" data-sound="${esc(d.fp)}" ${on ? "checked" : ""}/> Also play this PC's sound on ${esc(d.name)}'s speakers</label>${soundNote(st, `This PC's sound plays on ${esc(d.name)} too.`)}`;
+  return `<label class="snd"><input type="checkbox" data-sound="${esc(d.fp)}" ${on ? "checked" : ""}/> Also play this PC's sound on ${esc(d.name)}'s speakers</label>${on ? `<label class="snd sub"><input type="checkbox" data-push-only="${esc(d.fp)}" ${(S.push_only || []).includes(d.fp) ? "checked" : ""}/> Only there: keep this PC quiet</label>` : ""}${soundNote(st, `This PC's sound plays on ${esc(d.name)}.`)}`;
 };
 // Being controlled: stay awake so the screen doesn't blank and lock while you work from the other keyboard.
 const awakeToggle = (d) => `<label class="snd"><input type="checkbox" data-awake="${esc(d.fp)}" ${(S.let_sleep || []).includes(d.fp) ? "" : "checked"}/> Keep this computer awake and unlocked while ${esc(d.name)} controls it</label>`;
@@ -115,9 +120,17 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   const paired = d.trusted || d.once;
   const sharing = ses && ses.origin && ses.mode === "input", controlled = ses && !ses.origin && ses.mode === "input";
   let msg = "", act = "";
+  // The other computer asked for this PC's camera or microphone: one button instead of hunting for the switch.
+  const want = ["cam", "mic"].find((k) => (S.wants || []).includes(`${k}:${d.fp}`));
+  const viewing = ses && !ses.origin && (ses.mode === "mirror" || ses.mode === "extend");
   if (!d.online) {
     msg = paired ? `<div class="hint">${name} is asleep, switched off, or bekdesk is closed on it. It reconnects by itself when it's back.</div>` : "";
     if (d.can_wake) act = `<button class="btn primary" data-wake="${esc(d.fp)}">Wake ${name}</button>`;
+  }
+  else if (want && paired) {
+    const thing = want === "cam" ? "camera" : "microphone";
+    msg = `<div class="hint warn">${name} wants to use this PC's ${thing}.</div>`;
+    act = `<button class="btn primary" data-allow="${want}" data-allow-fp="${esc(d.fp)}">Allow</button><button class="btn" data-allow="${want}" data-allow-fp="${esc(d.fp)}" data-deny="1">Not now</button>`;
   }
   else if (d.locked) msg = `<div class="hint warn">${name} is locked. Unlock it on that computer to continue; while you share, bekdesk then keeps it awake so it doesn't lock again from being idle.</div>`;
   else if (!paired) msg = `<div class="hint">Pick a mode to connect. ${name} asks to approve; check both screens show <b>${esc(d.code)}</b>.</div>`;
@@ -126,22 +139,29 @@ function pcExtra(d, ses, mode, pill, sendFail) {
   else if (sendFail) msg = sendFail;
   else if (sharing) msg = `<div class="hint">Move the mouse off the edge toward ${name}.</div>`;
   else if (!ses) msg = `<div class="hint">Drop files here to send them to ${name}.</div>`;
+  // Still connecting: say it's working and what's happening, so it doesn't look stuck or switched off.
+  if (d.online && (!d.note || d.note === "Reconnecting") && (busy[d.fp] ? busy[d.fp] !== "off" : pill[0] === "wait" && mode !== "off" && !d.locked)) {
+    const what = mode === "input" ? "Connecting the keyboard and mouse" : `Starting the screen on ${name}. The first time can take up to a minute, and Windows may ask for permission`;
+    msg = `<div class="hint wait"><i class="spin"></i>${ses && ses.status && !busy[d.fp] ? esc(ses.status) + ". " : ""}${what}…</div>`;
+  }
   // Something's wrong or still connecting: Reconnect is the obvious next step.
   const stuck = mode !== "off" && !busy[d.fp] && (d.note || pill[0] === "wait");
   if (stuck) act += act ? reconnectBtn(d.fp) : reconnectBtn(d.fp).replace('class="btn"', 'class="btn primary"');
   const more = [
     mode === "extend" || mode === "input" ? speedSlider(d.fp, d.name) : "",
     mode === "extend" || mode === "mirror" ? soundToggle(d.fp, d.name) : "",
-    sharing || controlled ? hearToggle(d, sharing) : "",
+    sharing || controlled ? hearToggle(d) : "",
     sharing || controlled ? pushToggle(d) : "",
     sharing || controlled ? micToggles(d) : "",
     sharing || controlled ? camToggles(d) : "",
     controlled ? awakeToggle(d) : "",
+    mode === "mirror" && S.me.os === "windows" && (!ses || ses.origin) ? `<label class="snd"><input type="checkbox" data-fill="${esc(d.fp)}" ${(S.fill || []).includes(d.fp) ? "checked" : ""}/> Fill ${name}'s screen: this PC switches to that screen's size while it's duplicated (no black bars)</label>` : "",
+    viewing ? `<label class="snd"><input type="checkbox" data-windowed="${esc(d.fp)}" ${(S.windowed || []).includes(d.fp) ? "checked" : ""}/> Show ${name}'s screen in a window I can resize (from the next time it connects)</label>` : "",
     mode !== "off" && !busy[d.fp] && !stuck ? `<div class="acts1">${reconnectBtn(d.fp)}</div>` : "",
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
     paired ? `<div class="acts1"><button class="link danger" data-forget-card="${esc(d.fp)}">Forget this computer</button></div>` : "",
   ].join("");
-  return msg + (act ? `<div class="acts1">${act}</div>` : "") + (d.online && more ? `<details class="more"><summary>More</summary>${more}</details>` : "");
+  return msg + (act ? `<div class="acts1">${act}</div>` : "") + (d.online && more ? `<details class="more"${ses ? " open" : ""}><summary>${ses ? "Options" : "More"}</summary>${more}</details>` : "");
 }
 
 // One entry per thing you can connect: each nearby computer, plus the Android tablet.
@@ -296,6 +316,8 @@ $("#device-list").addEventListener("click", async (e) => {
   if (act) pairAction(act);
   const r = e.target.closest("[data-reconnect]");
   if (r) reconnect(r.dataset.reconnect);
+  const al = e.target.closest("[data-allow]");
+  if (al) { await call(al.dataset.allow === "cam" ? "set_cam" : "set_mic", { fp: al.dataset.allowFp, share: true, on: !al.dataset.deny }); refresh(); return; }
   const wk = e.target.closest("[data-wake]");
   if (wk) { try { await invoke("wake", { fp: wk.dataset.wake }); toast("Wake signal sent. It can take a minute to start."); } catch (err) { toast(`Couldn't wake it: ${err}`); } return; }
   if (e.target.closest("[data-scroll-lock]")) { await call("toggle_scroll_lock"); setTimeout(refresh, 300); return; }
@@ -392,15 +414,40 @@ $("#device-list").addEventListener("change", async (e) => {
   if (e.target.dataset.camShare || e.target.dataset.camUse) {
     const share = !!e.target.dataset.camShare, fp = e.target.dataset.camShare || e.target.dataset.camUse, on = e.target.checked;
     const k = share ? "cam_share" : "use_cam";
-    S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
+    S[k] = on ? [...(share ? S[k] || [] : []), fp] : (S[k] || []).filter((x) => x !== fp); // using: one at a time
     call("set_cam", { fp, share, on });
     return;
   }
   if (e.target.dataset.micShare || e.target.dataset.micUse) {
     const share = !!e.target.dataset.micShare, fp = e.target.dataset.micShare || e.target.dataset.micUse, on = e.target.checked;
     const k = share ? "mic_share" : "use_mic";
-    S[k] = on ? [...(S[k] || []), fp] : (S[k] || []).filter((x) => x !== fp);
+    S[k] = on ? [...(share ? S[k] || [] : []), fp] : (S[k] || []).filter((x) => x !== fp); // using: one at a time
     call("set_mic", { fp, share, on });
+    return;
+  }
+  if (e.target.dataset.fill) {
+    const fp = e.target.dataset.fill, on = e.target.checked;
+    S.fill = on ? [...(S.fill || []), fp] : (S.fill || []).filter((x) => x !== fp);
+    await call("set_fill", { fp, on });
+    reconnect(fp); // the picture takes the new size when it starts again
+    return;
+  }
+  if (e.target.dataset.pushOnly) {
+    const fp = e.target.dataset.pushOnly, on = e.target.checked;
+    S.push_only = on ? [...(S.push_only || []), fp] : (S.push_only || []).filter((x) => x !== fp);
+    call("set_push_only", { fp, on });
+    return;
+  }
+  if (e.target.dataset.windowed) {
+    const fp = e.target.dataset.windowed, on = e.target.checked;
+    S.windowed = on ? [...(S.windowed || []), fp] : (S.windowed || []).filter((x) => x !== fp);
+    call("set_windowed", { fp, on });
+    return;
+  }
+  if (e.target.dataset.hearBoth) {
+    const fp = e.target.dataset.hearBoth, on = e.target.checked;
+    S.hear_both = on ? [...(S.hear_both || []), fp] : (S.hear_both || []).filter((x) => x !== fp);
+    call("set_hear_both", { fp, on });
     return;
   }
   if (e.target.dataset.sound) {
@@ -485,8 +532,8 @@ const KIND_LABEL = { laptop: "Laptop", desktop: "Desktop", tablet: "Tablet" };
 function wsItems() {
   const items = [{ key: "self", name: S.me.name, os: S.me.os, kind: S.me.kind || "desktop", mons: monitorsOf(S.me.monitors), me: true, online: true, state: "This PC" }];
   for (const d of S.devices) {
-    if (!d.trusted && !d.once && !d.online) continue;
-    const st = d.session ? LABEL[d.session.mode] : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
+    if (!d.online) continue; // only computers that are on right now
+    const st = d.session ? (d.session.mode === "input" ? (d.session.origin ? "Uses this PC's keyboard" : "Its keyboard controls this PC") : LABEL[d.session.mode]) : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
     items.push({ key: d.fp, name: d.name || "Unknown", os: d.os, kind: d.kind || (d.os === "macos" ? "laptop" : "desktop"), mons: monitorsOf(d.monitors), online: d.online, live: !!d.session, state: st });
   }
   // Shown as live only while it is actually streaming; otherwise greyed out as "Not connected".
@@ -554,9 +601,10 @@ function renderWorkspace() {
     ey = Math.max(ey, Math.abs(it.p.y - cy), Math.abs(it.p.y + it.b.h - cy));
   }
   // Keep the view still while arranging, so dropping one device never shrinks or shifts the others;
-  // refit only when the canvas size or the set of devices changes, or something would fall off the edge.
+  // refit only when the canvas size or the set of devices changes, or something would fall off the edge,
+  // or the devices were brought a lot closer together (zoom back in).
   const fit = Math.min(1.1, (W / 2 - 40) / ex, (H / 2 - 70) / ey), keys = items.map((i) => i.key).join();
-  if (!wsView || wsView.W !== W || wsView.H !== H || wsView.keys !== keys || wsView.scale > fit * 1.02) wsView = { W, H, keys, scale: fit, cx, cy };
+  if (!wsView || wsView.W !== W || wsView.H !== H || wsView.keys !== keys || wsView.scale > fit * 1.02 || fit > wsView.scale * 1.25) wsView = { W, H, keys, scale: fit, cx, cy };
   const { scale } = wsView;
   ({ cx, cy } = wsView);
   Object.assign(c.dataset, { scale, cx, cy });
@@ -840,14 +888,20 @@ function renderSettings() {
   if (document.activeElement !== $("#scroll-speed")) $("#scroll-speed").value = sc.speed;
   $("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×";
   $("#scroll-invert").checked = sc.invert;
+  $("#hub").checked = !!S.hub;
+  $("#scroll-fix-row").classList.toggle("hidden", S.me.os !== "windows");
+  $("#scroll-fix").checked = S.scroll_fix !== false;
   // Windows only: the lock screen helper.
   $("#lock-card").classList.toggle("hidden", S.lock_screen == null);
   if (S.lock_screen != null && !lockBusy) {
     $("#lock-text").textContent = S.lock_screen
       ? "On. While another computer controls this one, its keyboard and mouse also work on the lock screen and on Windows admin prompts, and other computers' cameras can show up here as \"bekdesk camera\"."
       : "Off. Turn this on so a computer controlling this one can type your password on the lock screen, and so other computers' cameras can show up here as \"bekdesk camera\" (Windows asks for admin permission once).";
-    $("#lock-btn").textContent = S.lock_screen ? "Turn off" : "Turn on";
-    $("#lock-btn").className = S.lock_screen ? "btn" : "btn primary";
+    // After an update the camera part set up earlier may be older than this version's: one more admin prompt updates it.
+    const upd = S.lock_screen && S.cam_update;
+    if (upd) $("#lock-text").textContent = "The bekdesk camera part needs an update for this version (Windows asks for admin permission once). Close Zoom and other camera apps first.";
+    $("#lock-btn").textContent = upd ? "Update" : S.lock_screen ? "Turn off" : "Turn on";
+    $("#lock-btn").className = S.lock_screen && !upd ? "btn" : "btn primary";
   }
   const devs = S.devices.filter((d) => d.trusted || d.online);
   setHTML($("#trusted"), devs.map((d) => `<div class="srow" data-fp="${esc(d.fp)}"><div class="row2"><div class="ico sm dark">${iconFor(d.kind, d.os)}</div><div class="grow"><b>${esc(d.name)}</b><div class="small">${esc(osName(d.os))} · ${d.online ? "Online" : "Offline"} · ${d.trusted ? "Trusted" : d.once ? "Allowed this session" : "Not paired"}</div></div>
@@ -929,12 +983,17 @@ async function adminSetup(enable) {
   $("#lock-btn").disabled = false;
   refresh();
 }
-$("#lock-btn").addEventListener("click", () => adminSetup(!S.lock_screen));
+$("#lock-btn").addEventListener("click", () => adminSetup(!S.lock_screen || !!S.cam_update));
 const saveScroll = () => call("set_scroll", { speed: +$("#scroll-speed").value, invert: $("#scroll-invert").checked }).then(refresh);
 $("#scroll-speed").addEventListener("input", () => ($("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×"));
 $("#scroll-speed").addEventListener("change", saveScroll);
 $("#scroll-invert").addEventListener("change", saveScroll);
 $("#autostart").addEventListener("change", (e) => call("autostart", { enable: e.target.checked }));
+$("#scroll-fix").addEventListener("change", (e) => call("set_scroll_fix", { on: e.target.checked }).then(refresh));
+$("#hub").addEventListener("change", (e) => call("set_hub", { on: e.target.checked }).then(refresh));
+// Linux (GNOME): the system's own "Automatic Screen Lock" switch, for a computer used only from another keyboard.
+const showAutoLock = (locks) => { $("#nolock-row").classList.toggle("hidden", locks == null); $("#nolock").checked = locks === false; };
+$("#nolock").addEventListener("change", (e) => invoke("auto_lock", { set: !e.target.checked }).then(showAutoLock).catch((err) => { toast(`${err}`); e.target.checked = !e.target.checked; }));
 // Only links that are filled in are shown.
 const LINKS = { GitHub: "https://github.com/pabibek9/bekdesk", LinkedIn: "", Instagram: "", "Join the developer team": "" };
 $("#links").addEventListener("click", (e) => { const b = e.target.closest("[data-url]"); if (b) invoke("open_url", { url: b.dataset.url }); });
@@ -1042,6 +1101,7 @@ async function refresh() {
   try { S = await invoke("snapshot"); render(); } catch (e) { console.error(e); }
 }
 invoke("autostart", {}).then((on) => ($("#autostart").checked = on)).catch(() => {});
+invoke("auto_lock", {}).then(showAutoLock).catch(() => {});
 refresh();
 setInterval(refresh, 1000);
 window.addEventListener("resize", () => { render(); moveInd(); });

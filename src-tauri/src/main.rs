@@ -153,6 +153,50 @@ async fn set_hear(app: Core<'_>, fp: String, on: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// While `fp`'s sound plays here: whether it keeps playing on its own speakers too (otherwise it goes quiet there).
+#[tauri::command]
+async fn set_hear_both(app: Core<'_>, fp: String, on: bool) -> Result<(), String> {
+    let core = app.inner();
+    let mut cfg = core.cfg.lock().unwrap();
+    if on { cfg.hear_both.insert(fp.clone()) } else { cfg.hear_both.remove(&fp) };
+    drop(cfg);
+    core.save();
+    audio::restart(&format!("pull:{fp}"));
+    audio::sync(core);
+    Ok(())
+}
+
+/// Whether `fp`'s screen is shown here in a resizable window (otherwise full screen); used the next time it connects.
+#[tauri::command]
+fn set_windowed(app: Core, fp: String, on: bool) {
+    let mut cfg = app.cfg.lock().unwrap();
+    if on { cfg.windowed.insert(fp) } else { cfg.windowed.remove(&fp) };
+    drop(cfg);
+    app.save();
+}
+
+/// While this computer's sound plays on `fp`: whether this computer goes quiet (sound only there).
+#[tauri::command]
+async fn set_push_only(app: Core<'_>, fp: String, on: bool) -> Result<(), String> {
+    let core = app.inner();
+    let mut cfg = core.cfg.lock().unwrap();
+    if on { cfg.push_only.insert(fp.clone()) } else { cfg.push_only.remove(&fp) };
+    drop(cfg);
+    core.save();
+    audio::restart(&format!("push:{fp}"));
+    audio::sync(core);
+    Ok(())
+}
+
+/// Duplicate to `fp`: whether this PC takes that screen's size while shown there, so the picture fills it.
+#[tauri::command]
+fn set_fill(app: Core, fp: String, on: bool) {
+    let mut cfg = app.cfg.lock().unwrap();
+    if on { cfg.fill.insert(fp) } else { cfg.fill.remove(&fp) };
+    drop(cfg);
+    app.save();
+}
+
 /// Microphone sharing: `share` lets `fp` use this computer's microphone; otherwise `fp`'s microphone is used here.
 #[tauri::command]
 async fn set_mic(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(), String> {
@@ -160,6 +204,12 @@ async fn set_mic(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(),
     {
         let mut cfg = core.cfg.lock().unwrap();
         let set = if share { &mut cfg.mic_share } else { &mut cfg.use_mic };
+        if !share && on {
+            set.clear(); // one microphone at a time: several at once only echo
+        }
+        if share {
+            core.wants.lock().unwrap().remove(&format!("mic:{fp}"));
+        }
         if on { set.insert(fp) } else { set.remove(&fp) };
     }
     core.save();
@@ -174,6 +224,12 @@ async fn set_cam(app: Core<'_>, fp: String, share: bool, on: bool) -> Result<(),
     {
         let mut cfg = core.cfg.lock().unwrap();
         let set = if share { &mut cfg.cam_share } else { &mut cfg.use_cam };
+        if !share && on {
+            set.clear(); // there is one "bekdesk camera", so it shows one computer's camera at a time
+        }
+        if share {
+            core.wants.lock().unwrap().remove(&format!("cam:{fp}"));
+        }
         if on { set.insert(fp) } else { set.remove(&fp) };
     }
     core.save();
@@ -210,6 +266,8 @@ fn set_stay_awake(app: Core, fp: String, on: bool) {
 
 /// Whether the Windows lock screen helper is set up; checked once, then after each change (the check runs `sc`).
 static LOCK_SCREEN: std::sync::OnceLock<std::sync::Mutex<bool>> = std::sync::OnceLock::new();
+/// Whether the set-up camera part is older than the shipped one; checked once, then after each setup.
+static CAM_OLD: std::sync::OnceLock<std::sync::Mutex<bool>> = std::sync::OnceLock::new();
 fn lock_screen_on() -> bool {
     *LOCK_SCREEN.get_or_init(|| std::sync::Mutex::new(bekdesk_core::service::installed())).lock().unwrap()
 }
@@ -233,6 +291,7 @@ async fn admin_setup(app: Core<'_>, enable: bool) -> Result<bool, String> {
     .await;
     let now = service::installed();
     *LOCK_SCREEN.get_or_init(|| std::sync::Mutex::new(now)).lock().unwrap() = now;
+    *CAM_OLD.get_or_init(|| std::sync::Mutex::new(false)).lock().unwrap() = service::camera_outdated();
     r.map(|()| now).map_err(|e| format!("{e:#}"))
 }
 
@@ -244,6 +303,32 @@ fn set_scroll(app: Core, speed: f64, invert: bool) {
     cfg.invert_scroll = invert;
     drop(cfg);
     app.save();
+}
+
+/// Settings (Windows): the trackpad-scrolling fix for computers this one controls; restarts keyboard sharing.
+#[tauri::command]
+async fn set_scroll_fix(app: Core<'_>, on: bool) -> Result<(), String> {
+    app.cfg.lock().unwrap().no_scroll_fix = !on;
+    app.save();
+    modes::restart_deskflow_server(app.inner()).await.map_err(|e| format!("{e:#}"))
+}
+
+/// Settings: this is the main device, so every computer connected with Share Input plays its sound here.
+#[tauri::command]
+async fn set_hub(app: Core<'_>, on: bool) -> Result<(), String> {
+    app.cfg.lock().unwrap().hub = on;
+    app.save();
+    audio::sync(app.inner());
+    Ok(())
+}
+
+/// Settings (Linux): whether this computer locks its screen by itself when left alone; None where bekdesk can't tell.
+#[tauri::command]
+fn auto_lock(set: Option<bool>) -> Result<Option<bool>, String> {
+    if let Some(on) = set {
+        display::set_auto_lock(on).map_err(|e| format!("{e:#}"))?;
+    }
+    Ok(display::auto_lock())
 }
 
 #[tauri::command]
@@ -407,6 +492,7 @@ fn snapshot(app: Core) -> serde_json::Value {
     v["me"]["scroll_lock"] = modes::scroll_locked(&app).into();
     v["version"] = env!("CARGO_PKG_VERSION").into();
     v["lock_screen"] = if cfg!(windows) { lock_screen_on().into() } else { serde_json::Value::Null };
+    v["cam_update"] = (*CAM_OLD.get_or_init(|| std::sync::Mutex::new(bekdesk_core::service::camera_outdated())).lock().unwrap()).into();
     v["update"] = match &*bekdesk_core::update::STATE.lock().unwrap() {
         Some(Ok(Some(latest))) => serde_json::json!({"available": latest}),
         Some(Err(e)) => serde_json::json!({"error": e}),
@@ -742,6 +828,12 @@ fn main() {
         let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
         std::process::exit(if r.is_ok() { 0 } else { 1 });
     }
+    // Elevated (one UAC prompt): `--firewall <screen-sharing exe>`.
+    if args.get(1).map(String::as_str) == Some("--firewall") && args.len() == 3 {
+        let r = bekdesk_core::service::allow_through_firewall(std::path::Path::new(&args[2]));
+        let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
+        std::process::exit(if r.is_ok() { 0 } else { 1 });
+    }
     if args.get(1).map(String::as_str) == Some("--uninstall-service") {
         let r = bekdesk_core::service::uninstall();
         let _ = std::fs::write(std::env::temp_dir().join("bekdesk-setup.log"), r.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_default());
@@ -884,7 +976,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_hear_both, set_push_only, set_fill, set_windowed, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, set_hub, set_scroll_fix, auto_lock, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {

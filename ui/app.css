@@ -170,6 +170,7 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 .addr-connect .pinrow { margin-top: 8px; }
 .addr-connect input { width: 240px; text-align: left; font: inherit; letter-spacing: 0; }
 .acts1 { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.snd.sub { margin: 6px 0 0 24px; }
 .snd { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--ink2); }
 .addtab { margin-top: 14px; font-size: 13px; }
 .ico.sm { width: 30px; height: 30px; border-radius: 9px; }
@@ -294,6 +295,8 @@ body { animation: appIn .55s var(--spring) both; }
 .dev.live .ico { background: #1d2230; }
 .seg button { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--panel); }
 .seg button .mi { grid-row: 1 / span 2; width: 18px; height: 18px; stroke: var(--ink2); fill: none; stroke-width: 1.7; }
+/* Keyboard focus must not look like the selected mode (two "glowing" buttons): thin dashed grey ring instead. */
+.seg button:focus-visible { outline: 1px dashed var(--ink3); outline-offset: 2px; }
 .seg button.on .mi { stroke: var(--accent); }
 .seg button.on b { color: var(--accent); }
 
@@ -419,3 +422,15 @@ body { animation: appIn .55s var(--spring) both; }
 .ver { display: flex; flex-direction: column; gap: 2px; }
 .ver .ver-s { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ver .ver-err { color: var(--warn); }
+
+/* Options are switches, not tick boxes. */
+.snd input[type=checkbox], label.row input[type=checkbox], .wl-row input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: none; width: 34px; height: 20px; border-radius: 10px; background: var(--line); position: relative; cursor: pointer; transition: background .2s; margin: 0; }
+.snd input[type=checkbox]::after, label.row input[type=checkbox]::after, .wl-row input[type=checkbox]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.35); transition: transform .2s; }
+.snd input[type=checkbox]:checked, label.row input[type=checkbox]:checked, .wl-row input[type=checkbox]:checked { background: var(--accent); }
+.snd input[type=checkbox]:checked::after, label.row input[type=checkbox]:checked::after, .wl-row input[type=checkbox]:checked::after { transform: translateX(14px); }
+.snd input[type=checkbox]:disabled, label.row input[type=checkbox]:disabled { opacity: .5; cursor: default; }
+/* "Still working" line while a connection starts. */
+.hint.wait { display: flex; align-items: center; gap: 8px; color: var(--warn); }
+.spin { flex: none; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
