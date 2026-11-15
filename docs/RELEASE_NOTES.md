@@ -1,3 +1,21 @@
+## bekdesk 0.1.33 — preview
+
+Update every computer you use together.
+
+### Fixes
+- **Cards didn't update after you pressed something on them:** after pressing Allow or flipping a switch, the card kept showing the old state until you clicked somewhere else, so Allow looked like it did nothing and new options didn't appear. Cards now update straight away.
+- **App not responding (for example Allow doing nothing):** a camera request could freeze bekdesk when it arrived at the same moment as a background check. The two no longer block each other.
+- **Manage Screens zooms back in** when you bring devices closer together (it only zoomed out before).
+- **Manage Screens says who shares with whom:** "Uses this PC's keyboard" or "Its keyboard controls this PC" instead of "Share Input" under the other computer.
+- **The screen viewer opens in front** of other windows on Windows when another computer starts Duplicate or Extend.
+- **Extend:** waits longer for the extra screen before giving up, and the message says what to do instead of naming an internal part.
+
+### Sound
+- **Only on the other computer:** under "Also play this PC's sound on <name>'s speakers" there is now **Only there: keep this PC quiet**. Together with "Play <name>'s sound on this PC" you can send sound in either direction and choose which side stays quiet.
+
+### Look
+- **Options are open while connected** (the "More" fold is named "Options" and starts open), so the switches are visible without hunting.
+
 ## bekdesk 0.1.32 — preview
 
 Update every computer you use together.

@@ -59,7 +59,10 @@ document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("clic
 // ---------- devices ----------
 // Views are patched in place (never rebuilt every tick) so clicks, focus and animations survive refreshes.
 function setHTML(el, html) {
-  if (el._h === html || el.contains(document.activeElement)) return;
+  // Don't redraw under a field being typed in or a slider being dragged. A clicked button or switch keeps the
+  // focus too, and must not stop the card from updating (it made Allow look like it did nothing).
+  const a = document.activeElement;
+  if (el._h === html || (el.contains(a) && a.matches("input:not([type=checkbox]), textarea, select"))) return;
   el._h = html;
   el.innerHTML = html;
 }
@@ -103,7 +106,7 @@ const camToggles = (d) => {
 const pushToggle = (d) => {
   if (!canSend(S.me.os)) return "";
   const on = !!(S.sound || {})[d.fp], st = on && (S.hearing || {})["push:" + d.fp];
-  return `<label class="snd"><input type="checkbox" data-sound="${esc(d.fp)}" ${on ? "checked" : ""}/> Also play this PC's sound on ${esc(d.name)}'s speakers</label>${soundNote(st, `This PC's sound plays on ${esc(d.name)} too.`)}`;
+  return `<label class="snd"><input type="checkbox" data-sound="${esc(d.fp)}" ${on ? "checked" : ""}/> Also play this PC's sound on ${esc(d.name)}'s speakers</label>${on ? `<label class="snd sub"><input type="checkbox" data-push-only="${esc(d.fp)}" ${(S.push_only || []).includes(d.fp) ? "checked" : ""}/> Only there: keep this PC quiet</label>` : ""}${soundNote(st, `This PC's sound plays on ${esc(d.name)}.`)}`;
 };
 // Being controlled: stay awake so the screen doesn't blank and lock while you work from the other keyboard.
 const awakeToggle = (d) => `<label class="snd"><input type="checkbox" data-awake="${esc(d.fp)}" ${(S.let_sleep || []).includes(d.fp) ? "" : "checked"}/> Keep this computer awake and unlocked while ${esc(d.name)} controls it</label>`;
@@ -156,7 +159,7 @@ function pcExtra(d, ses, mode, pill, sendFail) {
     ses ? `<div class="hint">Drop files on this card to send them. Copied text and files sync while Share Input is on.</div>` : "",
     paired ? `<div class="acts1"><button class="link danger" data-forget-card="${esc(d.fp)}">Forget this computer</button></div>` : "",
   ].join("");
-  return msg + (act ? `<div class="acts1">${act}</div>` : "") + (d.online && more ? `<details class="more"><summary>More</summary>${more}</details>` : "");
+  return msg + (act ? `<div class="acts1">${act}</div>` : "") + (d.online && more ? `<details class="more"${ses ? " open" : ""}><summary>${ses ? "Options" : "More"}</summary>${more}</details>` : "");
 }
 
 // One entry per thing you can connect: each nearby computer, plus the Android tablet.
@@ -420,6 +423,12 @@ $("#device-list").addEventListener("change", async (e) => {
     call("set_mic", { fp, share, on });
     return;
   }
+  if (e.target.dataset.pushOnly) {
+    const fp = e.target.dataset.pushOnly, on = e.target.checked;
+    S.push_only = on ? [...(S.push_only || []), fp] : (S.push_only || []).filter((x) => x !== fp);
+    call("set_push_only", { fp, on });
+    return;
+  }
   if (e.target.dataset.windowed) {
     const fp = e.target.dataset.windowed, on = e.target.checked;
     S.windowed = on ? [...(S.windowed || []), fp] : (S.windowed || []).filter((x) => x !== fp);
@@ -515,7 +524,7 @@ function wsItems() {
   const items = [{ key: "self", name: S.me.name, os: S.me.os, kind: S.me.kind || "desktop", mons: monitorsOf(S.me.monitors), me: true, online: true, state: "This PC" }];
   for (const d of S.devices) {
     if (!d.online) continue; // only computers that are on right now
-    const st = d.session ? LABEL[d.session.mode] : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
+    const st = d.session ? (d.session.mode === "input" ? (d.session.origin ? "Uses this PC's keyboard" : "Its keyboard controls this PC") : LABEL[d.session.mode]) : d.online ? (d.trusted || d.once ? "Ready" : "Not paired") : "Offline";
     items.push({ key: d.fp, name: d.name || "Unknown", os: d.os, kind: d.kind || (d.os === "macos" ? "laptop" : "desktop"), mons: monitorsOf(d.monitors), online: d.online, live: !!d.session, state: st });
   }
   // Shown as live only while it is actually streaming; otherwise greyed out as "Not connected".
@@ -583,9 +592,10 @@ function renderWorkspace() {
     ey = Math.max(ey, Math.abs(it.p.y - cy), Math.abs(it.p.y + it.b.h - cy));
   }
   // Keep the view still while arranging, so dropping one device never shrinks or shifts the others;
-  // refit only when the canvas size or the set of devices changes, or something would fall off the edge.
+  // refit only when the canvas size or the set of devices changes, or something would fall off the edge,
+  // or the devices were brought a lot closer together (zoom back in).
   const fit = Math.min(1.1, (W / 2 - 40) / ex, (H / 2 - 70) / ey), keys = items.map((i) => i.key).join();
-  if (!wsView || wsView.W !== W || wsView.H !== H || wsView.keys !== keys || wsView.scale > fit * 1.02) wsView = { W, H, keys, scale: fit, cx, cy };
+  if (!wsView || wsView.W !== W || wsView.H !== H || wsView.keys !== keys || wsView.scale > fit * 1.02 || fit > wsView.scale * 1.25) wsView = { W, H, keys, scale: fit, cx, cy };
   const { scale } = wsView;
   ({ cx, cy } = wsView);
   Object.assign(c.dataset, { scale, cx, cy });

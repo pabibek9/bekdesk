@@ -621,6 +621,41 @@ pub fn is_locked() -> bool {
     false
 }
 
+/// Put the first window of process `pid` in front of the other windows (it may take a while to appear).
+pub fn raise_window(pid: u32) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        unsafe extern "system" fn find(h: HWND, p: LPARAM) -> BOOL {
+            let want = &mut *(p as *mut (u32, HWND));
+            let mut pid = 0;
+            GetWindowThreadProcessId(h, &mut pid);
+            if pid == want.0 && IsWindowVisible(h) != 0 {
+                want.1 = h;
+                return 0;
+            }
+            1
+        }
+        std::thread::spawn(move || unsafe {
+            for _ in 0..40 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let mut want: (u32, HWND) = (pid, std::ptr::null_mut());
+                EnumWindows(Some(find), &mut want as *mut _ as LPARAM);
+                if !want.1.is_null() {
+                    // "Always on top" for a moment brings it to the front without needing the keyboard focus.
+                    SetWindowPos(want.1, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                    SetWindowPos(want.1, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                    SetForegroundWindow(want.1);
+                    return;
+                }
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = pid;
+}
+
 /// Whether this computer locks its screen by itself when left alone (GNOME only; None where bekdesk can't tell).
 pub fn auto_lock() -> Option<bool> {
     if !cfg!(target_os = "linux") {

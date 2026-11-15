@@ -174,7 +174,8 @@ pub fn sync(app: &Arc<App>) {
                     } else if dir == "push" {
                         let (mut s, _) = crate::net::request(&app, &key, &Req::AudioPush).await?;
                         STATUS.lock().unwrap().insert(fp.clone(), "playing".into());
-                        send(&mut s, false).await
+                        let quiet_here = app.cfg.lock().unwrap().push_only.contains(&key);
+                        send(&mut s, quiet_here).await
                     } else {
                         let mute = Some(!app.cfg.lock().unwrap().hear_both.contains(&key));
                         let (mut s, _) = crate::net::request(&app, &key, &Req::Audio { mute }).await?;

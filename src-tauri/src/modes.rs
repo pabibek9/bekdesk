@@ -281,7 +281,12 @@ pub async fn start_target(app: &Arc<App>, fp: &str, ip: IpAddr, mode: Mode, pin:
                     ]
                     .map(String::from)
                     .to_vec();
-                    spawn_in(&app2, &exe, &args, "moonlight-stream.log", &home)
+                    let child = spawn_in(&app2, &exe, &args, "moonlight-stream.log", &home)?;
+                    // Another computer started this, so nobody clicked here: put the picture in front of other windows.
+                    if let Some(pid) = child.id() {
+                        display::raise_window(pid);
+                    }
+                    Ok(child)
                 }
                 .await;
                 match pair {
@@ -539,14 +544,14 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         // its own log at startup, so check the remembered id there and restart only if it changed.
         let sun_log = dir.join("sunshine.log");
         let mut id = None;
-        for _ in 0..30 {
+        for _ in 0..80 {
             tokio::time::sleep(Duration::from_millis(500)).await;
             id = std::fs::read_to_string(&sun_log).ok().and_then(|t| display::device_id_from_log(&t, o));
             if id.is_some() {
                 break;
             }
         }
-        let id = id.context("Sunshine did not list the virtual monitor, so it can't be extended onto it (see sunshine.log)")?;
+        let id = id.context("the extra screen didn't show up for screen sharing, so Extend can't start. Press Reconnect; if it keeps failing, open Details on this card and send what it shows")?;
         if cached.as_deref() != Some(id.as_str()) {
             let _ = child.kill().await;
             std::fs::write(&conf_path, format!("{conf}output_name = {id}\n"))?;
@@ -1346,8 +1351,9 @@ pub async fn supervise(app: Arc<App>) {
         // Every ~10 s: a paired computer that isn't listed (just woke up, or discovery lost it) is tried at the
         // address it last answered from, so it comes back by itself instead of staying "Asleep or off".
         if n % 5 == 3 {
-            let lost: Vec<String> = app.cfg.lock().unwrap().trusted.iter().filter(|(_, t)| !t.addr.is_empty()).map(|(fp, t)| (fp.clone(), t.addr.clone())).filter(|(fp, _)| net::offline(&app, fp)).map(|(_, a)| a).collect();
-            for addr in lost {
+            // Collected first, so the settings lock isn't held while looking at the list of computers.
+            let known: Vec<(String, String)> = app.cfg.lock().unwrap().trusted.iter().filter(|(_, t)| !t.addr.is_empty()).map(|(fp, t)| (fp.clone(), t.addr.clone())).collect();
+            for (_, addr) in known.into_iter().filter(|(fp, _)| net::offline(&app, fp)) {
                 let app = app.clone();
                 tokio::spawn(async move {
                     let _ = net::dial(&app, &addr).await;

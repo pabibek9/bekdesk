@@ -317,7 +317,12 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
             }
         }
         Req::Camera { probe } => {
-            let shared = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input) && app.cfg.lock().unwrap().cam_share.contains(&fp);
+            // Two statements: holding the sessions lock while taking the settings lock can freeze the app, because
+            // the sound and camera sync take them in the other order.
+            let shared = |app: &App| {
+                let linked = app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
+                linked && app.cfg.lock().unwrap().cam_share.contains(&fp)
+            };
             if !shared(&app) || !app.knows(&fp) {
                 // A paired computer asking: offer its user an Allow button here instead of making them hunt for the switch.
                 if app.knows(&fp) && app.wants.lock().unwrap().insert(format!("cam:{fp}")) {
