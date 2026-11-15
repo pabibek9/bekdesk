@@ -40,6 +40,14 @@ pub fn touch() {
     }
 }
 
+/// After a bekdesk update: the camera part set up earlier is older than the one this version ships, so setup
+/// should run once more (it lives in a protected folder that only the admin step can write to).
+pub fn camera_outdated() -> bool {
+    let shipped = std::env::current_exe().ok().and_then(|e| std::fs::read(e.with_file_name("resources").join("softcam.dll")).ok());
+    let set_up = std::fs::read(bin_dir().join("softcam.dll")).ok();
+    matches!((shipped, set_up), (Some(a), Some(b)) if a != b)
+}
+
 #[cfg(windows)]
 pub use win::{allow_through_firewall, elevated, firewall_allowed, install, run_service, uninstall, user_sid};
 

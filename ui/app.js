@@ -100,8 +100,9 @@ const micToggles = (d) => {
 const camToggles = (d) => {
   const share = (S.cam_share || []).includes(d.fp), use = (S.use_cam || []).includes(d.fp), st = use && (S.camera || {})[d.fp];
   const mine = canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-share="${esc(d.fp)}" ${share ? "checked" : ""}/> Let ${esc(d.name)} use this PC's camera</label>` : "";
+  const old = S.cam_update && use ? `<div class="hint warn">Update the bekdesk camera part in Settings (press Update), so ${esc(d.name)}'s camera switches off when you stop using it.</div>` : "";
   const theirs = canSend(d.os) && canSend(S.me.os) ? `<label class="snd"><input type="checkbox" data-cam-use="${esc(d.fp)}" ${use ? "checked" : ""}/> Use ${esc(d.name)}'s camera here (pick "bekdesk camera" in Zoom, Teams or your browser${S.me.os === "linux" ? "; asks for your password once" : ""})</label>${soundNote(st, `${esc(d.name)}'s camera is on as "bekdesk camera".`, "Camera not on yet", `Ready. Pick "bekdesk camera" in your app; ${esc(d.name)}'s camera switches on only while an app uses it.`)}` : "";
-  return mine + theirs;
+  return mine + theirs + old;
 };
 const pushToggle = (d) => {
   if (!canSend(S.me.os)) return "";
@@ -896,8 +897,11 @@ function renderSettings() {
     $("#lock-text").textContent = S.lock_screen
       ? "On. While another computer controls this one, its keyboard and mouse also work on the lock screen and on Windows admin prompts, and other computers' cameras can show up here as \"bekdesk camera\"."
       : "Off. Turn this on so a computer controlling this one can type your password on the lock screen, and so other computers' cameras can show up here as \"bekdesk camera\" (Windows asks for admin permission once).";
-    $("#lock-btn").textContent = S.lock_screen ? "Turn off" : "Turn on";
-    $("#lock-btn").className = S.lock_screen ? "btn" : "btn primary";
+    // After an update the camera part set up earlier may be older than this version's: one more admin prompt updates it.
+    const upd = S.lock_screen && S.cam_update;
+    if (upd) $("#lock-text").textContent = "The bekdesk camera part needs an update for this version (Windows asks for admin permission once). Close Zoom and other camera apps first.";
+    $("#lock-btn").textContent = upd ? "Update" : S.lock_screen ? "Turn off" : "Turn on";
+    $("#lock-btn").className = S.lock_screen && !upd ? "btn" : "btn primary";
   }
   const devs = S.devices.filter((d) => d.trusted || d.online);
   setHTML($("#trusted"), devs.map((d) => `<div class="srow" data-fp="${esc(d.fp)}"><div class="row2"><div class="ico sm dark">${iconFor(d.kind, d.os)}</div><div class="grow"><b>${esc(d.name)}</b><div class="small">${esc(osName(d.os))} · ${d.online ? "Online" : "Offline"} · ${d.trusted ? "Trusted" : d.once ? "Allowed this session" : "Not paired"}</div></div>
@@ -979,7 +983,7 @@ async function adminSetup(enable) {
   $("#lock-btn").disabled = false;
   refresh();
 }
-$("#lock-btn").addEventListener("click", () => adminSetup(!S.lock_screen));
+$("#lock-btn").addEventListener("click", () => adminSetup(!S.lock_screen || !!S.cam_update));
 const saveScroll = () => call("set_scroll", { speed: +$("#scroll-speed").value, invert: $("#scroll-invert").checked }).then(refresh);
 $("#scroll-speed").addEventListener("input", () => ($("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×"));
 $("#scroll-speed").addEventListener("change", saveScroll);

@@ -522,7 +522,7 @@ async fn start_sunshine(app: &App, key: &str, port: u16, output: Option<&str>, r
         }
     }
     let conf = format!(
-        "sunshine_name = bekdesk {}{}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\n",
+        "sunshine_name = bekdesk {}{}\nport = {port}\nfile_state = {state}\ncredentials_file = {state}\npkey = {}\ncert = {}\nfile_apps = {}\nlog_path = {}\norigin_web_ui_allowed = pc\nupnp = disabled\nsystem_tray = disabled\n",
         app.name().replace('\n', " "),
         if receiver.is_empty() { String::new() } else { format!(" for {}", receiver.replace('\n', " ")) },
         fwd(&pkey),

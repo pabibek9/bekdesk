@@ -266,6 +266,8 @@ fn set_stay_awake(app: Core, fp: String, on: bool) {
 
 /// Whether the Windows lock screen helper is set up; checked once, then after each change (the check runs `sc`).
 static LOCK_SCREEN: std::sync::OnceLock<std::sync::Mutex<bool>> = std::sync::OnceLock::new();
+/// Whether the set-up camera part is older than the shipped one; checked once, then after each setup.
+static CAM_OLD: std::sync::OnceLock<std::sync::Mutex<bool>> = std::sync::OnceLock::new();
 fn lock_screen_on() -> bool {
     *LOCK_SCREEN.get_or_init(|| std::sync::Mutex::new(bekdesk_core::service::installed())).lock().unwrap()
 }
@@ -289,6 +291,7 @@ async fn admin_setup(app: Core<'_>, enable: bool) -> Result<bool, String> {
     .await;
     let now = service::installed();
     *LOCK_SCREEN.get_or_init(|| std::sync::Mutex::new(now)).lock().unwrap() = now;
+    *CAM_OLD.get_or_init(|| std::sync::Mutex::new(false)).lock().unwrap() = service::camera_outdated();
     r.map(|()| now).map_err(|e| format!("{e:#}"))
 }
 
@@ -489,6 +492,7 @@ fn snapshot(app: Core) -> serde_json::Value {
     v["me"]["scroll_lock"] = modes::scroll_locked(&app).into();
     v["version"] = env!("CARGO_PKG_VERSION").into();
     v["lock_screen"] = if cfg!(windows) { lock_screen_on().into() } else { serde_json::Value::Null };
+    v["cam_update"] = (*CAM_OLD.get_or_init(|| std::sync::Mutex::new(bekdesk_core::service::camera_outdated())).lock().unwrap()).into();
     v["update"] = match &*bekdesk_core::update::STATE.lock().unwrap() {
         Some(Ok(Some(latest))) => serde_json::json!({"available": latest}),
         Some(Err(e)) => serde_json::json!({"error": e}),

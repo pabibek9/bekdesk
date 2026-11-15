@@ -1,3 +1,14 @@
+## bekdesk 0.1.36 — preview
+
+**After installing on the computer that uses another computer's camera: Settings → press Update** (Windows asks for admin permission once; close Zoom first). Without it the camera works as before but the fix below doesn't apply.
+
+### Camera
+- **The other computer's camera light stayed on after you left a meeting:** the camera part only knew that an app had opened it once, never that it stopped. It now reports whether an app is still asking for pictures, and the other computer's camera switches off about two seconds after the app stops.
+- **"Another app is already using it" right after switching the camera off and on:** bekdesk now waits a moment for its own previous camera to go away. Because the camera now really stops, the "camera is busy" message on the next use should go too.
+
+### Screens
+- **No more "Choose a Gamepad Driver" pop-up** (or other pop-ups from the screen-sharing part) while Duplicate or Extend is on. That pop-up was about game controllers only; it has nothing to do with Extend and nothing needs to be bought.
+
 ## bekdesk 0.1.35 — preview
 
 Update the computer whose camera is being used (and the other one, for the clearer messages).

@@ -280,13 +280,27 @@ mod win {
             // Created up front so camera apps list it and can open it before any picture arrives.
             const W: usize = 1280;
             const H: usize = 720;
-            let cam = (create(W as i32, H as i32, 0.0),);
+            // A camera this app just let go of (switching it off and on) can take a moment to disappear.
+            let mut cam = (create(W as i32, H as i32, 0.0),);
+            for _ in 0..15 {
+                if !cam.0.is_null() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                cam.0 = create(W as i32, H as i32, 0.0);
+            }
             if cam.0.is_null() {
                 bail!("another app is already using the bekdesk camera");
             }
+            // The camera part answers "has an app asked for a picture since I last asked?"; an app that is showing
+            // the camera asks many times a second, so two quiet seconds mean it stopped.
+            let mut asked = std::time::Instant::now() - std::time::Duration::from_secs(60);
             let mut bgr = Vec::new();
             loop {
-                used.store(connected.is_none_or(|f| f(cam.0)), std::sync::atomic::Ordering::Relaxed);
+                if connected.is_none_or(|f| f(cam.0)) {
+                    asked = std::time::Instant::now();
+                }
+                used.store(asked.elapsed() < std::time::Duration::from_secs(2), std::sync::atomic::Ordering::Relaxed);
                 let jpeg = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
                     Ok(j) => j,
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,

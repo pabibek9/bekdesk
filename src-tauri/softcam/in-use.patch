@@ -1,0 +1,32 @@
+diff --git a/src/softcamcore/FrameBuffer.cpp b/src/softcamcore/FrameBuffer.cpp
+index 43371b4..2f62db4 100644
+--- a/src/softcamcore/FrameBuffer.cpp
++++ b/src/softcamcore/FrameBuffer.cpp
+@@ -169,8 +169,14 @@ bool FrameBuffer::active() const
+ 
+ bool FrameBuffer::connected() const
+ {
++    // bekdesk: true if an application asked for a frame since the last call. It used to stay true
++    // for good once any application had opened the camera, so the sender never learned it had stopped.
+     std::lock_guard<NamedMutex> lock(m_mutex);
+-    return m_shmem && header()->m_connected;
++    if (!m_shmem) return false;
++    auto frame = const_cast<Header*>(header());
++    bool connected = frame->m_connected != 0;
++    frame->m_connected = 0;
++    return connected;
+ }
+ 
+ void FrameBuffer::deactivate()
+@@ -224,6 +230,11 @@ bool FrameBuffer::waitForNewFrame(uint64_t frame_counter, float time_out)
+     Timer timer;
+     while (active() && m_watchdog.alive())
+     {
++        {
++            // bekdesk: the application is asking for a frame right now (see connected()).
++            std::lock_guard<NamedMutex> lock(m_mutex);
++            header()->m_connected = 1;
++        }
+         if (frameCounter() > frame_counter)
+         {
+             return true;
