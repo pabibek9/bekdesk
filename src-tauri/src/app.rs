@@ -105,6 +105,8 @@ pub struct Config {
     pub push_only: std::collections::HashSet<String>,
     /// Duplicate to these computers fills their screen: this PC takes their screen size while it's shown there.
     pub fill: std::collections::HashSet<String>,
+    /// Switch off the trackpad-scrolling fix (taking the foreground while the pointer is on another computer).
+    pub no_scroll_fix: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -517,6 +519,7 @@ impl App {
             "sound": cfg.sound,
             "hear": cfg.hear,
             "hub": cfg.hub,
+            "scroll_fix": !cfg.no_scroll_fix,
             "fill": cfg.fill,
             "push_only": cfg.push_only,
             "windowed": cfg.windowed,

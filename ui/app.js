@@ -888,6 +888,8 @@ function renderSettings() {
   $("#scroll-val").textContent = (+$("#scroll-speed").value).toFixed(2).replace(/0$/, "") + "×";
   $("#scroll-invert").checked = sc.invert;
   $("#hub").checked = !!S.hub;
+  $("#scroll-fix-row").classList.toggle("hidden", S.me.os !== "windows");
+  $("#scroll-fix").checked = S.scroll_fix !== false;
   // Windows only: the lock screen helper.
   $("#lock-card").classList.toggle("hidden", S.lock_screen == null);
   if (S.lock_screen != null && !lockBusy) {
@@ -983,6 +985,7 @@ $("#scroll-speed").addEventListener("input", () => ($("#scroll-val").textContent
 $("#scroll-speed").addEventListener("change", saveScroll);
 $("#scroll-invert").addEventListener("change", saveScroll);
 $("#autostart").addEventListener("change", (e) => call("autostart", { enable: e.target.checked }));
+$("#scroll-fix").addEventListener("change", (e) => call("set_scroll_fix", { on: e.target.checked }).then(refresh));
 $("#hub").addEventListener("change", (e) => call("set_hub", { on: e.target.checked }).then(refresh));
 // Linux (GNOME): the system's own "Automatic Screen Lock" switch, for a computer used only from another keyboard.
 const showAutoLock = (locks) => { $("#nolock-row").classList.toggle("hidden", locks == null); $("#nolock").checked = locks === false; };

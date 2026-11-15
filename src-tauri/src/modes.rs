@@ -442,10 +442,14 @@ pub async fn restart_deskflow_server(app: &Arc<App>) -> Result<()> {
     let (conf, ini) = (dir.join("server.conf"), dir.join("server.ini"));
     let (links_conf, computers) = server_config(app);
     std::fs::write(&conf, links_conf)?;
+    // Windows only sends a laptop trackpad's two-finger scrolling to a program that can see it. Letting the
+    // keyboard-sharing part take the foreground while the pointer is on another computer is the known way to
+    // make that scrolling reach it (the old default of this kind of tool). Not confirmed on real hardware yet.
+    let keep = app.cfg.lock().unwrap().no_scroll_fix;
     std::fs::write(
         &ini,
         format!(
-            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nenableClipboard=false\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
+            "[core]\ncoreMode=2\ncomputerName={}\nport={DESKFLOW_PORT}\ninterface=127.0.0.1\npreventSleep=false\n\n{computers}[server]\nenableClipboard=false\nwin32KeepForeground={keep}\nexternalConfig=true\nexternalConfigFile={}\n\n[security]\ntlsEnabled=false\ncheckPeerFingerprints=false\n",
             App::screen_name(&app.id.fp),
             fwd(&conf)
         ),

@@ -93,7 +93,8 @@
             <div class="small">Another computer's keyboard can't type on the lock or sign-in screen here. To also skip sign-in after a restart, turn on Automatic Login in the system's Settings → Users.</div></div>
           <div class="spd">Scroll speed when another computer controls this one <input type="range" id="scroll-speed" min="0.25" max="3" step="0.25" /> <b id="scroll-val"></b></div>
           <label class="row"><input type="checkbox" id="scroll-invert" /> Reverse scroll direction</label>
-          <div class="small">Two-finger scrolling is passed on; pinch and swipe gestures stay on the computer you're touching.</div>
+          <label class="row hidden" id="scroll-fix-row"><input type="checkbox" id="scroll-fix" /> Send this laptop's trackpad scrolling to the computer it controls (experimental)</label>
+          <div class="small">Pinch and swipe gestures can't be passed on; they stay on the computer you're touching.</div>
           <div class="row seg3" id="theme-seg" role="radiogroup" aria-label="Appearance">Appearance <button class="btn sm" data-theme="auto">Auto</button><button class="btn sm" data-theme="light">Light</button><button class="btn sm" data-theme="dark">Dark</button></div>
           <div class="row"><button class="link" data-open="inbox">Open received files</button></div>
         </div>

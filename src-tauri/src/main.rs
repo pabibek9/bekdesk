@@ -302,6 +302,14 @@ fn set_scroll(app: Core, speed: f64, invert: bool) {
     app.save();
 }
 
+/// Settings (Windows): the trackpad-scrolling fix for computers this one controls; restarts keyboard sharing.
+#[tauri::command]
+async fn set_scroll_fix(app: Core<'_>, on: bool) -> Result<(), String> {
+    app.cfg.lock().unwrap().no_scroll_fix = !on;
+    app.save();
+    modes::restart_deskflow_server(app.inner()).await.map_err(|e| format!("{e:#}"))
+}
+
 /// Settings: this is the main device, so every computer connected with Share Input plays its sound here.
 #[tauri::command]
 async fn set_hub(app: Core<'_>, on: bool) -> Result<(), String> {
@@ -964,7 +972,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_hear_both, set_push_only, set_fill, set_windowed, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, set_hub, auto_lock, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
+        .invoke_handler(tauri::generate_handler![snapshot, set_mode, decide, set_caps, forget, unblock, save_layout, identify_screens, connect_address, diagnostics, make_primary, move_display, display_modes, change_display, open_display_settings, set_sound, set_hear, set_hear_both, set_push_only, set_fill, set_windowed, set_stay_awake, set_mic, set_cam, wake, lock_all, shared_files, open_shared, take_pending_send, set_scroll, set_hub, set_scroll_fix, auto_lock, admin_setup, set_pointer, rescan, pair_device, block_device, open_url, quit_app, toggle_scroll_lock, device_details, check_update, install_update, drop_files, send_files, set_name, set_tablet, tablet_pin, tablet_decline, tablet_forget, autostart, open_folder])
         .build(tauri::generate_context!())
         .expect("error while building bekdesk")
         .run(|_, e| {
