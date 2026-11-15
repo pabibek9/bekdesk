@@ -1,3 +1,21 @@
+## bekdesk 0.1.32 — preview
+
+Update every computer you use together.
+
+### Camera and microphone
+- **Allow button instead of hunting for a switch:** when another computer switches on "Use this PC's camera" (or microphone), this PC opens bekdesk and its card says "<name> wants to use this PC's camera" with **Allow** and **Not now**. Nothing is shared until you press Allow.
+- **"bekdesk camera" is available in Zoom straight away** on Windows once it's switched on, and the other computer's real camera only turns on while an app is actually using it (its light goes off when you close the app). On Linux it still stays on while switched on.
+- **One camera and one microphone at a time:** switching on another computer's switches the previous one off, so several microphones can't echo.
+- Clearer wording: "Camera not on yet: …" instead of "No sound yet: …", and "Ready. Pick bekdesk camera in your app".
+
+### Screens
+- **Connecting shows what's happening:** a spinner and a line such as "Starting the screen on <name>. The first time can take up to a minute…", so it doesn't look switched off.
+- **Duplicate / Extend in a window:** on the computer showing the screen, **More → Show <name>'s screen in a window I can resize** (used from the next time it connects). Zooming with the scroll wheel isn't possible in the viewer.
+- **Manage Screens shows only computers that are on.**
+
+### Look
+- Options are switches now, not tick boxes.
+
 ## bekdesk 0.1.31 — preview
 
 ### Fixes

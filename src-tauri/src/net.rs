@@ -52,7 +52,11 @@ pub enum Req {
     /// The asking computer sends its sound here to play (also on this computer's speakers).
     AudioPush,
     /// Send this computer's camera to the asking computer (only if the user shared it with that computer).
-    Camera,
+    /// `probe`: only ask whether it's allowed, without switching the camera on.
+    Camera {
+        #[serde(default)]
+        probe: bool,
+    },
     /// Lock this computer's screen ("Lock all" on a computer it's connected with).
     Lock,
     /// Send this computer's microphone to the asking computer (only if the user shared it with that computer).
@@ -312,12 +316,19 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
                 _ = ended => Ok(()),
             }
         }
-        Req::Camera => {
+        Req::Camera { probe } => {
             let shared = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input) && app.cfg.lock().unwrap().cam_share.contains(&fp);
             if !shared(&app) || !app.knows(&fp) {
-                return write_msg(&mut s, &Resp::err(format!("{} hasn't shared its camera with you (tick it on {} first)", app.name(), app.name()))).await;
+                // A paired computer asking: offer its user an Allow button here instead of making them hunt for the switch.
+                if app.knows(&fp) && app.wants.lock().unwrap().insert(format!("cam:{fp}")) {
+                    app.asked.notify_one();
+                }
+                return write_msg(&mut s, &Resp::err(format!("{0} hasn't allowed its camera yet. Press Allow on {0}", app.name()))).await;
             }
             write_msg(&mut s, &Resp::ok()).await?;
+            if probe {
+                return Ok(());
+            }
             app.log(format!("sharing the camera with {}", app.peer_name(&fp)));
             let ended = async {
                 while shared(&app) {
@@ -341,7 +352,10 @@ async fn handle(app: Arc<App>, tcp: TcpStream, addr: SocketAddr) -> Result<()> {
         Req::Mic => {
             let linked = |app: &App| app.sessions.lock().unwrap().get(&fp).is_some_and(|x| x.mode == Mode::Input);
             if !linked(&app) || !app.knows(&fp) || !app.cfg.lock().unwrap().mic_share.contains(&fp) {
-                return write_msg(&mut s, &Resp::err(format!("{} hasn't shared its microphone with you (tick it on {} first)", app.name(), app.name()))).await;
+                if app.knows(&fp) && app.wants.lock().unwrap().insert(format!("mic:{fp}")) {
+                    app.asked.notify_one();
+                }
+                return write_msg(&mut s, &Resp::err(format!("{0} hasn't allowed its microphone yet. Press Allow on {0}", app.name()))).await;
             }
             write_msg(&mut s, &Resp::ok()).await?;
             app.log(format!("sharing the microphone with {}", app.peer_name(&fp)));
@@ -753,6 +767,8 @@ mod tests {
         // 0.1.29 and older send no "mute"; then the receiver decides as before.
         assert!(matches!(serde_json::from_str::<Req>(r#"{"t":"audio"}"#).unwrap(), Req::Audio { mute: None }));
         assert!(matches!(serde_json::from_str::<Req>(r#"{"t":"audio","mute":true}"#).unwrap(), Req::Audio { mute: Some(true) }));
+        // A camera request without "probe" (0.1.31 and older) is a real request for the picture.
+        assert!(matches!(serde_json::from_str::<Req>(r#"{"t":"camera"}"#).unwrap(), Req::Camera { probe: false }));
     }
 
     #[test]

@@ -8,7 +8,9 @@ use crate::net::Req;
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(not(windows))]
+use tokio::io::AsyncRead;
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Largest frame accepted (a 1080p JPEG is well under this).
 const MAX_FRAME: u32 = 8 * 1024 * 1024;
@@ -106,28 +108,52 @@ fn jpeg_bounds(buf: &[u8]) -> Option<(usize, usize)> {
     Some((a, a + 2 + e + 2))
 }
 
-/// Receiving side: show the frames as this computer's "bekdesk camera" until the connection ends.
-pub async fn play<R: AsyncRead + Unpin>(input: &mut R) -> Result<()> {
-    #[cfg(windows)]
-    {
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(2);
-        let shower = std::thread::spawn(move || win::show(rx));
-        loop {
-            let len = input.read_u32_le().await?;
+/// Windows receiving side: "bekdesk camera" stays available to camera apps while this runs, but the other
+/// computer's real camera is only switched on while an app is actually using it.
+#[cfg(windows)]
+async fn watch(app: &Arc<App>, key: &str) -> Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(2);
+    let used = Arc::new(AtomicBool::new(false));
+    let shower = {
+        let used = used.clone();
+        std::thread::spawn(move || win::show(rx, used))
+    };
+    let stopped = |shower: std::thread::JoinHandle<Result<()>>| -> Result<()> {
+        shower.join().map_err(|_| anyhow::anyhow!("the bekdesk camera stopped"))??;
+        bail!("the bekdesk camera stopped")
+    };
+    loop {
+        // Allowed? Asking also puts an Allow button on the owner's screen if not.
+        crate::net::request(app, key, &Req::Camera { probe: true }).await?;
+        STATUS.lock().unwrap().insert(key.to_string(), "ready".into());
+        while !used.load(Ordering::Relaxed) {
+            if shower.is_finished() {
+                return stopped(shower);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        let (mut s, _) = crate::net::request(app, key, &Req::Camera { probe: false }).await?;
+        STATUS.lock().unwrap().insert(key.to_string(), "playing".into());
+        while used.load(Ordering::Relaxed) {
+            let len = s.read_u32_le().await?;
             if len > MAX_FRAME {
                 bail!("bad camera frame");
             }
             let mut jpeg = vec![0u8; len as usize];
-            input.read_exact(&mut jpeg).await?;
+            s.read_exact(&mut jpeg).await?;
             if shower.is_finished() {
-                break;
+                return stopped(shower);
             }
             let _ = tx.try_send(jpeg);
         }
-        drop(tx);
-        return shower.join().map_err(|_| anyhow::anyhow!("the camera stopped"))?;
+        // Dropping the connection here switches the other computer's camera off until an app wants it again.
     }
-    #[cfg(not(windows))]
+}
+
+/// Linux receiving side: show the frames as this computer's "bekdesk-camera" until the connection ends.
+#[cfg(not(windows))]
+pub async fn play<R: AsyncRead + Unpin>(input: &mut R) -> Result<()> {
     {
         let dev = virtual_camera()?;
         // GStreamer decodes the JPEGs into the virtual camera, which camera apps then open like a real one.
@@ -193,7 +219,10 @@ mod win {
         crate::service::bin_dir().join("softcam.dll")
     }
 
-    pub fn show(rx: std::sync::mpsc::Receiver<Vec<u8>>) -> Result<()> {
+    type Connected = unsafe extern "C" fn(*mut core::ffi::c_void) -> bool;
+
+    /// Shows frames from `rx` as the bekdesk camera until `rx` closes; `used` says whether a camera app has it open.
+    pub fn show(rx: std::sync::mpsc::Receiver<Vec<u8>>, used: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Result<()> {
         let path = dll();
         if !path.exists() {
             bail!("the bekdesk camera isn't set up on this PC yet: Settings → Lock screen, camera and admin prompts → Turn on");
@@ -208,9 +237,20 @@ mod win {
             let create: Create = std::mem::transmute(f(b"scCreateCamera\0")?);
             let send: SendFrame = std::mem::transmute(f(b"scSendFrame\0")?);
             let delete: Delete = std::mem::transmute(f(b"scDeleteCamera\0")?);
-            let mut cam: (*mut core::ffi::c_void, u32, u32) = (std::ptr::null_mut(), 0, 0);
+            let connected: Option<Connected> = GetProcAddress(lib, b"scIsConnected\0".as_ptr()).map(|p| std::mem::transmute(p));
+            // Created up front so camera apps list it and can open it before any picture arrives.
+            let mut cam: (*mut core::ffi::c_void, u32, u32) = (create(1280, 720, 0.0), 1280, 720);
+            if cam.0.is_null() {
+                bail!("another app is already using the bekdesk camera");
+            }
             let mut bgr = Vec::new();
-            while let Ok(jpeg) = rx.recv() {
+            loop {
+                used.store(connected.is_none_or(|f| f(cam.0)), std::sync::atomic::Ordering::Relaxed);
+                let jpeg = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                    Ok(j) => j,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(_) => break,
+                };
                 let mut d = jpeg_decoder::Decoder::new(&jpeg[..]);
                 let Ok(rgb) = d.decode() else { continue };
                 let Some(info) = d.info() else { continue };
@@ -279,8 +319,13 @@ pub fn sync(app: &Arc<App>) {
         streams.insert(
             fp,
             tokio::spawn(async move {
+                #[cfg(windows)]
+                let r = watch(&app, &key).await;
+                // shortcut: on Linux the other computer's camera stays on while this is switched on (the virtual
+                // camera can't say whether an app is watching); stream on demand if that bothers people.
+                #[cfg(not(windows))]
                 let r = async {
-                    let (mut s, _) = crate::net::request(&app, &key, &Req::Camera).await?;
+                    let (mut s, _) = crate::net::request(&app, &key, &Req::Camera { probe: false }).await?;
                     STATUS.lock().unwrap().insert(key.clone(), "playing".into());
                     play(&mut s).await
                 }
@@ -288,7 +333,8 @@ pub fn sync(app: &Arc<App>) {
                 let msg = r.err().map_or("stopped".to_string(), |e| format!("{e:#}"));
                 app.log(format!("camera from {}: {msg}", app.peer_name(&key)));
                 STATUS.lock().unwrap().insert(key, msg);
-                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                // Short, so the picture starts soon after the owner presses Allow.
+                tokio::time::sleep(std::time::Duration::from_secs(6)).await;
             }),
         );
     }

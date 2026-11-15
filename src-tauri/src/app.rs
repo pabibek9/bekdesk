@@ -99,6 +99,8 @@ pub struct Config {
     pub hub: bool,
     /// Computers that keep playing on their own speakers too while their sound plays here (default: they go quiet).
     pub hear_both: std::collections::HashSet<String>,
+    /// Computers whose screen is shown here in a resizable window instead of full screen.
+    pub windowed: std::collections::HashSet<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -181,6 +183,9 @@ pub struct App {
     pub stale: Mutex<HashSet<String>>,
     /// Peers whose lock screen is showing, as they last reported.
     pub locked: Mutex<HashSet<String>>,
+    /// Paired computers that asked for this computer's camera ("cam:<fp>") or microphone ("mic:<fp>") before the
+    /// user allowed it; their card offers an Allow button.
+    pub wants: Mutex<HashSet<String>>,
     /// Battery (percent, charging) of paired laptops, from their last report.
     pub battery: Mutex<HashMap<String, (u8, bool)>>,
     pub log: Mutex<VecDeque<String>>,
@@ -231,6 +236,7 @@ impl App {
             notes: Default::default(),
             stale: Default::default(),
             locked: Default::default(),
+            wants: Default::default(),
             battery: Default::default(),
             log: Default::default(),
             clip_last: Default::default(),
@@ -507,6 +513,8 @@ impl App {
             "sound": cfg.sound,
             "hear": cfg.hear,
             "hub": cfg.hub,
+            "windowed": cfg.windowed,
+            "wants": *self.wants.lock().unwrap(),
             "hear_both": cfg.hear_both,
             "let_sleep": cfg.let_sleep,
             "scroll": {"speed": if cfg.scroll_speed > 0.0 { cfg.scroll_speed } else { 1.0 }, "invert": cfg.invert_scroll},
